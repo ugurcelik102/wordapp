@@ -1,5 +1,9 @@
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from app.core.config import settings
+
+_url = make_url(settings.DATABASE_URL)
+print(f"[db] connecting to {_url.drivername}://{_url.username}@{_url.host}:{_url.port}/{_url.database}", flush=True)
 
 engine = create_async_engine(settings.DATABASE_URL, echo=False)
 
