@@ -1,4 +1,5 @@
 from pydantic_settings import BaseSettings
+from pydantic import field_validator
 from typing import List
 
 
@@ -9,6 +10,17 @@ class Settings(BaseSettings):
 
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://wordapp_user:wordapp_pass@localhost:5432/wordapp"
+
+    @field_validator("DATABASE_URL")
+    @classmethod
+    def _use_asyncpg_driver(cls, v: str) -> str:
+        # Railway/Heroku gibi platformlar DATABASE_URL'i "postgresql://" ya da
+        # "postgres://" şemasıyla sağlar; asyncpg sürücüsü için şemayı zorluyoruz.
+        if v.startswith("postgres://"):
+            return "postgresql+asyncpg://" + v[len("postgres://"):]
+        if v.startswith("postgresql://"):
+            return "postgresql+asyncpg://" + v[len("postgresql://"):]
+        return v
 
     # Auth
     SECRET_KEY: str = "change-me-in-production"
