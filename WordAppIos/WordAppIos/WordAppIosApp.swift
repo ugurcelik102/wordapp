@@ -1,17 +1,13 @@
-//
-//  WordAppIosApp.swift
-//  WordAppIos
-//
-//  Created by ugur_celik on 23.06.2026.
-//
-
 import SwiftUI
 
 @main
 struct WordAppIosApp: App {
+    @StateObject private var appState = AppState()
+
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            RootView()
+                .environmentObject(appState)
         }
     }
 }
