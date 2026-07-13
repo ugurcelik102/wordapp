@@ -1,0 +1,37 @@
+services:
+  db:
+    image: postgres:16
+    container_name: wordapp_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: wordapp
+      POSTGRES_USER: wordapp_user
+      POSTGRES_PASSWORD: wordapp_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - wordapp_pgdata:/var/lib/postgresql/data
+      - ./schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wordapp_user -d wordapp"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ./backend
+    container_name: wordapp_api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://wordapp_user:wordapp_pass@db:5432/wordapp
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  wordapp_pgdata:
