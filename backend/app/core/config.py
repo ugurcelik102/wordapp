@@ -54,3 +54,11 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# Railway/Heroku genelde 'postgres://' veya 'postgresql://' verir; SQLAlchemy'nin
+# async motoru için '+asyncpg' sürücüsüne normalize et.
+_db_url = settings.DATABASE_URL
+if _db_url.startswith("postgres://"):
+    settings.DATABASE_URL = "postgresql+asyncpg://" + _db_url[len("postgres://"):]
+elif _db_url.startswith("postgresql://"):
+    settings.DATABASE_URL = "postgresql+asyncpg://" + _db_url[len("postgresql://"):]
