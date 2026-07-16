@@ -51,3 +51,22 @@ async def update_profile(
     await db.commit()
     await db.refresh(profile)
     return profile
+
+
+@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_account(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Hesabı ve tüm ilişkili verileri kalıcı olarak siler (App Store 5.1.1(v) uyumu).
+    users tablosundaki tüm ilişkili kayıtlar ON DELETE CASCADE ile otomatik silinir.
+    """
+    result = await db.execute(select(User).where(User.id == current_user.id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Kullanıcı bulunamadı")
+
+    await db.delete(user)
+    await db.commit()
+    return None
