@@ -45,6 +45,7 @@ async def get_or_create_today_package(
             UserWordProgress.next_review_date <= today,
             UserWordProgress.status.in_(["learning", "review"]),
         )
+        .order_by(UserWordProgress.next_review_date)
         .limit(word_count // 2)
     )
     selected_word_ids.extend(srs_result.scalars().all())
@@ -81,6 +82,23 @@ async def get_or_create_today_package(
             .limit(word_count - len(selected_word_ids))
         )
         selected_word_ids.extend(extra_result.scalars().all())
+
+    # Havuz tamamen tükendiyse: en uzun süredir çalışılmayan kelimeleri
+    # rastgelelik katarak yeniden kullan (her gün aynı kelimeler gelmesin).
+    if len(selected_word_ids) < word_count:
+        fallback_result = await db.execute(
+            select(UserWordProgress.word_id)
+            .where(
+                UserWordProgress.user_id == user_id,
+                not_(UserWordProgress.word_id.in_(selected_word_ids)),
+            )
+            .order_by(
+                UserWordProgress.last_reviewed_at.asc().nullsfirst(),
+                func.random(),
+            )
+            .limit(word_count - len(selected_word_ids))
+        )
+        selected_word_ids.extend(fallback_result.scalars().all())
 
     package = WordPackage(
         user_id=user_id,
@@ -140,7 +158,7 @@ async def create_new_package(db: AsyncSession, user_id: uuid.UUID) -> WordPackag
             UserWordProgress.user_id == user_id,
             UserWordProgress.next_review_date <= today,
             UserWordProgress.status.in_(["learning", "review"]),
-        ).limit(word_count // 2)
+        ).order_by(UserWordProgress.next_review_date).limit(word_count // 2)
     )
     selected_word_ids.extend(srs_result.scalars().all())
 
@@ -174,12 +192,20 @@ async def create_new_package(db: AsyncSession, user_id: uuid.UUID) -> WordPackag
         )
         selected_word_ids.extend(extra_result.scalars().all())
 
-    # Hiç kelime bulunamadıysa daha önce görülmüş kelimeleri tekrar kullan
-    if not selected_word_ids:
+    # Havuz tamamen tükendiyse: en uzun süredir çalışılmayan kelimeleri
+    # rastgelelik katarak yeniden kullan (her gün aynı kelimeler gelmesin).
+    if len(selected_word_ids) < word_count:
         fallback_result = await db.execute(
-            select(UserWordProgress.word_id).where(
+            select(UserWordProgress.word_id)
+            .where(
                 UserWordProgress.user_id == user_id,
-            ).limit(word_count)
+                not_(UserWordProgress.word_id.in_(selected_word_ids)),
+            )
+            .order_by(
+                UserWordProgress.last_reviewed_at.asc().nullsfirst(),
+                func.random(),
+            )
+            .limit(word_count - len(selected_word_ids))
         )
         selected_word_ids.extend(fallback_result.scalars().all())
 

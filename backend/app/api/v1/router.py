@@ -1,5 +1,7 @@
 from fastapi import APIRouter
-from app.api.v1.endpoints import auth, users, placement, words, sessions, reading, sentence_usage, exam, progress
+from app.api.v1.endpoints import (
+    auth, users, placement, words, sessions, reading, sentence_usage, exam, progress, daily_tasks,
+)
 
 api_router = APIRouter()
 
@@ -12,3 +14,4 @@ api_router.include_router(reading.router,        prefix="/reading",        tags=
 api_router.include_router(sentence_usage.router, prefix="/sentence-usage", tags=["sentence-usage"])
 api_router.include_router(exam.router,           prefix="/exam",           tags=["exam"])
 api_router.include_router(progress.router,       prefix="/progress",       tags=["progress"])
+api_router.include_router(daily_tasks.router,    prefix="/daily-tasks",    tags=["daily-tasks"])

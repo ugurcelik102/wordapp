@@ -185,6 +185,16 @@ CREATE TABLE word_package_items (
     UNIQUE (package_id, word_id)
 );
 
+-- Günlük görevlerin tamamlanma kaydı (öncelik sırası: review → new_words → sentence_usage)
+CREATE TABLE daily_task_completions (
+    id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id      UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    task_key     TEXT NOT NULL CHECK (task_key IN ('review', 'new_words', 'sentence_usage')),
+    task_date    DATE NOT NULL DEFAULT CURRENT_DATE,
+    completed_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (user_id, task_key, task_date)
+);
+
 -- ============================================================
 -- 5. SPACED REPETITION (SRS)
 -- ============================================================

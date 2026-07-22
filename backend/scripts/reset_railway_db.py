@@ -47,6 +47,9 @@ async def main() -> None:
         print("4) seed_words_extra.sql çalıştırılıyor...")
         await run_file(conn, BACKEND_DIR / "seed_words_extra.sql")
 
+        print("5) seed_words_v2.sql çalıştırılıyor...")
+        await run_file(conn, BACKEND_DIR / "seed_words_v2.sql")
+
         print("Bitti.")
     finally:
         await conn.close()

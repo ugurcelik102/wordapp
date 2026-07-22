@@ -6,6 +6,7 @@ from app.core.config import settings
 from app.db.session import engine
 from app.models.user import Base
 from app.models.progress import TestResult  # noqa: F401  (metadata'ya kayıt için)
+from app.models.daily_task import DailyTaskCompletion  # noqa: F401  (metadata'ya kayıt için)
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
