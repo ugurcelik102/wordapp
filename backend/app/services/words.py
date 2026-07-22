@@ -15,6 +15,72 @@ from app.models.progress import UserWordProgress
 from app.services.srs import update_srs, get_new_status
 
 
+async def _pick_diverse_new_words(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    level_id: int,
+    limit: int,
+    exclude_ids: list[uuid.UUID],
+    same_level_only: bool = True,
+) -> list[uuid.UUID]:
+    """Görülmemiş kelimelerden tür (part-of-speech) çeşitliliği olan bir seçki döner.
+
+    Sıklık sırasına göre geniş bir aday havuzu çekilir, sonra türlere göre
+    sırayla (noun → verb → adjective → …) seçilir. Böylece paket tek türe
+    (ör. hep 'verb') kilitlenmez.
+    """
+    if limit <= 0:
+        return []
+
+    seen_subq = select(UserWordProgress.word_id).where(UserWordProgress.user_id == user_id)
+
+    conditions = [
+        Word.is_active == True,
+        not_(Word.id.in_(seen_subq)),
+    ]
+    if exclude_ids:
+        conditions.append(not_(Word.id.in_(exclude_ids)))
+    if same_level_only:
+        conditions.append(Word.level_id == level_id)
+
+    order_by = [Word.frequency_rank.nullslast()]
+    if not same_level_only:
+        order_by.insert(0, func.abs(Word.level_id - level_id))
+
+    # Aday havuzu: istenenden çok daha geniş tut ki her türden kelime bulunabilsin.
+    result = await db.execute(
+        select(Word.id, Word.part_of_speech)
+        .where(*conditions)
+        .order_by(*order_by)
+        .limit(max(limit * 25, 100))
+    )
+    candidates = result.all()
+    if not candidates:
+        return []
+
+    buckets: dict[str, list[uuid.UUID]] = {}
+    for word_id, pos in candidates:
+        buckets.setdefault((pos or "other").lower(), []).append(word_id)
+
+    # Az bulunan türler öne gelsin ki isim/fiil çoğunluğu her şeyi doldurmasın.
+    order = sorted(buckets, key=lambda p: (len(buckets[p]), p))
+
+    picked: list[uuid.UUID] = []
+    while len(picked) < limit:
+        added = False
+        for pos in order:
+            if not buckets[pos]:
+                continue
+            picked.append(buckets[pos].pop(0))
+            added = True
+            if len(picked) == limit:
+                break
+        if not added:
+            break
+
+    return picked
+
+
 async def get_or_create_today_package(
     db: AsyncSession, user_id: uuid.UUID
 ) -> WordPackage:
@@ -52,36 +118,22 @@ async def get_or_create_today_package(
 
     remaining = word_count - len(selected_word_ids)
     if remaining > 0:
-        seen_subq = select(UserWordProgress.word_id).where(UserWordProgress.user_id == user_id)
-        new_words_result = await db.execute(
-            select(Word.id)
-            .where(
-                Word.level_id == level_id,
-                Word.is_active == True,
-                not_(Word.id.in_(seen_subq)),
-                not_(Word.id.in_(selected_word_ids)),
+        selected_word_ids.extend(
+            await _pick_diverse_new_words(
+                db, user_id, level_id, remaining, selected_word_ids
             )
-            .order_by(Word.frequency_rank.nullslast())
-            .limit(remaining)
         )
-        selected_word_ids.extend(new_words_result.scalars().all())
 
     # Hâlâ yetersizse: en yakın seviyelerden görülmemiş kelimelerle doldur.
     if len(selected_word_ids) < word_count:
-        seen_fill_subq = select(UserWordProgress.word_id).where(
-            UserWordProgress.user_id == user_id
-        )
-        extra_result = await db.execute(
-            select(Word.id)
-            .where(
-                Word.is_active == True,
-                not_(Word.id.in_(seen_fill_subq)),
-                not_(Word.id.in_(selected_word_ids)),
+        selected_word_ids.extend(
+            await _pick_diverse_new_words(
+                db, user_id, level_id,
+                word_count - len(selected_word_ids),
+                selected_word_ids,
+                same_level_only=False,
             )
-            .order_by(func.abs(Word.level_id - level_id), Word.frequency_rank.nullslast())
-            .limit(word_count - len(selected_word_ids))
         )
-        selected_word_ids.extend(extra_result.scalars().all())
 
     # Havuz tamamen tükendiyse: en uzun süredir çalışılmayan kelimeleri
     # rastgelelik katarak yeniden kullan (her gün aynı kelimeler gelmesin).
@@ -164,33 +216,22 @@ async def create_new_package(db: AsyncSession, user_id: uuid.UUID) -> WordPackag
 
     remaining = word_count - len(selected_word_ids)
     if remaining > 0:
-        seen_subq = select(UserWordProgress.word_id).where(UserWordProgress.user_id == user_id)
-        new_words_result = await db.execute(
-            select(Word.id).where(
-                Word.level_id == level_id,
-                Word.is_active == True,
-                not_(Word.id.in_(seen_subq)),
-                not_(Word.id.in_(selected_word_ids)),
-            ).order_by(Word.frequency_rank.nullslast()).limit(remaining)
+        selected_word_ids.extend(
+            await _pick_diverse_new_words(
+                db, user_id, level_id, remaining, selected_word_ids
+            )
         )
-        selected_word_ids.extend(new_words_result.scalars().all())
 
     # Hâlâ yetersizse: en yakın seviyelerden görülmemiş kelimelerle doldur.
     if len(selected_word_ids) < word_count:
-        seen_fill_subq = select(UserWordProgress.word_id).where(
-            UserWordProgress.user_id == user_id
-        )
-        extra_result = await db.execute(
-            select(Word.id)
-            .where(
-                Word.is_active == True,
-                not_(Word.id.in_(seen_fill_subq)),
-                not_(Word.id.in_(selected_word_ids)),
+        selected_word_ids.extend(
+            await _pick_diverse_new_words(
+                db, user_id, level_id,
+                word_count - len(selected_word_ids),
+                selected_word_ids,
+                same_level_only=False,
             )
-            .order_by(func.abs(Word.level_id - level_id), Word.frequency_rank.nullslast())
-            .limit(word_count - len(selected_word_ids))
         )
-        selected_word_ids.extend(extra_result.scalars().all())
 
     # Havuz tamamen tükendiyse: en uzun süredir çalışılmayan kelimeleri
     # rastgelelik katarak yeniden kullan (her gün aynı kelimeler gelmesin).
