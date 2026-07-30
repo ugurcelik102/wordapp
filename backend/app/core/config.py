@@ -32,7 +32,17 @@ class Settings(BaseSettings):
     # AI
     ANTHROPIC_API_KEY: str = ""
 
-    # E-posta (şifre sıfırlama). Boşsa "dev modu": kod gönderilmez, log'a yazılır.
+    # E-posta (şifre sıfırlama).
+    #
+    # Tercih sırası: 1) Brevo HTTP API  2) SMTP  3) dev modu (kod log'a yazılır).
+    #
+    # Railway gibi PaaS'ler giden SMTP portlarını (25/465/587/2525) engellediği
+    # için üretimde HTTP API kullanılır; SMTP yalnızca yerel geliştirme içindir.
+    BREVO_API_KEY: str = ""
+    # Gönderen adresi Brevo'da "doğrulanmış gönderen" olmalıdır.
+    EMAIL_FROM: str = ""
+    EMAIL_FROM_NAME: str = "Vocabee"
+
     SMTP_HOST: str = ""
     SMTP_PORT: int = 587
     SMTP_USER: str = ""

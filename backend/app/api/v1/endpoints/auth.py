@@ -87,17 +87,27 @@ async def forgot_password(payload: ForgotPasswordRequest, db: AsyncSession = Dep
         )
 
     # Kod yalnızca hesap gerçekten varsa üretilip gönderilir.
+    sent = False
     dev_code = None
     if user:
         code = generate_code(payload.email)
         sent = await run_in_threadpool(send_reset_email, payload.email, code)
-        if not sent:
-            dev_code = code  # dev modu: kodu yanıtta göster
+        # GÜVENLİK: kod yalnızca geliştirme modunda (DETAILED_AUTH_ERRORS=True)
+        # yanıtta gösterilir. Üretimde asla dönülmez — aksi halde herkes
+        # başkasının e-postasıyla kod alıp hesabı ele geçirebilir.
+        if not sent and settings.DETAILED_AUTH_ERRORS:
+            dev_code = code
 
     if settings.DETAILED_AUTH_ERRORS:
         message = ("Sıfırlama kodu e-postana gönderildi."
                    if dev_code is None else
                    "E-posta gönderimi yapılandırılmadığı için kod geliştirme modunda gösteriliyor.")
+    elif user and not sent:
+        # Üretimde gönderim başarısızsa kullanıcıyı boşuna kod beklerken bırakma.
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Şu anda e-posta gönderemiyoruz. Lütfen birazdan tekrar dene.",
+        )
     else:
         # Üretim (güvenli): hesabın var olup olmadığını ele vermeyen tek tip mesaj
         message = "Eğer bu e-posta kayıtlıysa, sıfırlama kodu gönderildi."

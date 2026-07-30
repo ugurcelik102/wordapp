@@ -7,7 +7,9 @@ from app.db.session import get_db
 from app.core.deps import get_current_user
 from app.models.user import User
 from app.schemas.daily_tasks import DailyTasksStatus, DailyTaskItem, DailyTaskCompleteRequest
-from app.services.daily_tasks import get_completed_keys, mark_completed, build_status
+from app.services.daily_tasks import (
+    get_completed_keys, mark_completed, build_status, active_task_order,
+)
 
 router = APIRouter()
 
@@ -18,11 +20,13 @@ async def daily_tasks_status(
     current_user: User = Depends(get_current_user),
 ):
     """Bugünün görev durumunu döner: hangi görev bitti, hangisi açık.
-    Sıra: 1) Kelime Tekrarı 2) Yeni Kelimeler 3) Cümle İçinde Kullanım."""
+    Sıra: 1) Kelime Tekrarı 2) Yeni Kelimeler 3) Cümle İçinde Kullanım.
+    Tekrar edilecek kelime yoksa (ör. ilk gün) "Kelime Tekrarı" listeye girmez."""
     completed = await get_completed_keys(db, current_user.id)
+    order = await active_task_order(db, current_user.id, completed)
     return DailyTasksStatus(
         date=date.today(),
-        tasks=[DailyTaskItem(**it) for it in build_status(completed)],
+        tasks=[DailyTaskItem(**it) for it in build_status(completed, order)],
     )
 
 
@@ -39,7 +43,8 @@ async def complete_daily_task(
         raise HTTPException(status_code=400, detail=str(e))
 
     completed = await get_completed_keys(db, current_user.id)
+    order = await active_task_order(db, current_user.id, completed)
     return DailyTasksStatus(
         date=date.today(),
-        tasks=[DailyTaskItem(**it) for it in build_status(completed)],
+        tasks=[DailyTaskItem(**it) for it in build_status(completed, order)],
     )

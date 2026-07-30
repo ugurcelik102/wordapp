@@ -5,8 +5,10 @@ Kodlar bellekte (in-memory) tutulur; kısa ömürlü oldukları için DB şemas�
 değiştirmeye gerek yoktur. Tek API instance için yeterlidir. API yeniden
 başlarsa bekleyen kodlar düşer (kullanıcı yeniden talep eder).
 
-SMTP yapılandırılmamışsa "dev modu": e-posta gönderilmez, kod log'a yazılır ve
-endpoint tarafından yanıtta dönülür (yalnızca geliştirme kolaylığı için).
+Gönderim tercih sırası:
+  1) Brevo HTTP API  — üretim (Railway giden SMTP portlarını engeller)
+  2) SMTP            — yerel geliştirme
+  3) dev modu        — kod log'a yazılır ve endpoint yanıtında dönülür
 """
 import ssl
 import smtplib
@@ -15,7 +17,11 @@ import threading
 from email.message import EmailMessage
 from datetime import datetime, timedelta, timezone
 
+import httpx
+
 from app.core.config import settings
+
+BREVO_ENDPOINT = "https://api.brevo.com/v3/smtp/email"
 
 _lock = threading.Lock()
 # email(lower) -> (code, expires_at)
@@ -56,21 +62,62 @@ def smtp_configured() -> bool:
     return bool(settings.SMTP_HOST and settings.SMTP_USER and settings.SMTP_PASSWORD)
 
 
-def send_reset_email(to_email: str, code: str) -> bool:
-    """Kodu e-posta ile gönderir. SMTP yoksa gönderim yapmaz (False döner)."""
-    if not smtp_configured():
-        print(f"[password_reset] SMTP yok — {to_email} için kod (dev): {code}")
-        return False
+def brevo_configured() -> bool:
+    return bool(settings.BREVO_API_KEY and _sender_email())
 
-    msg = EmailMessage()
-    msg["Subject"] = "WordApp — Şifre sıfırlama kodu"
-    msg["From"] = settings.SMTP_FROM
-    msg["To"] = to_email
-    msg.set_content(
+
+def _sender_email() -> str:
+    """Gönderen adresi: EMAIL_FROM > SMTP_USER (geriye dönük uyum)."""
+    return settings.EMAIL_FROM or settings.SMTP_USER
+
+
+def _subject() -> str:
+    return "Vocabee — Şifre sıfırlama kodu"
+
+
+def _body(code: str) -> str:
+    return (
         f"Şifre sıfırlama kodun: {code}\n\n"
         f"Bu kod {settings.RESET_CODE_TTL_MIN} dakika geçerlidir.\n"
         f"Bu isteği sen yapmadıysan bu e-postayı yok sayabilirsin."
     )
+
+
+def _send_via_brevo(to_email: str, code: str) -> bool:
+    """Brevo HTTP API ile gönderir (443 üzerinden — SMTP portu gerekmez)."""
+    payload = {
+        "sender": {"name": settings.EMAIL_FROM_NAME, "email": _sender_email()},
+        "to": [{"email": to_email}],
+        "subject": _subject(),
+        "textContent": _body(code),
+    }
+    try:
+        resp = httpx.post(
+            BREVO_ENDPOINT,
+            json=payload,
+            headers={
+                "api-key": settings.BREVO_API_KEY,
+                "content-type": "application/json",
+                "accept": "application/json",
+            },
+            timeout=15,
+        )
+        if resp.status_code in (200, 201, 202):
+            return True
+        print(f"[password_reset] Brevo hatası ({to_email}): HTTP {resp.status_code} {resp.text[:300]}")
+        return False
+    except Exception as e:  # noqa: BLE001
+        print(f"[password_reset] Brevo isteği başarısız ({to_email}): {type(e).__name__}: {e}")
+        return False
+
+
+def _send_via_smtp(to_email: str, code: str) -> bool:
+    """SMTP ile gönderir. Yerel geliştirme içindir; PaaS'lerde portlar kapalı olabilir."""
+    msg = EmailMessage()
+    msg["Subject"] = _subject()
+    msg["From"] = settings.SMTP_FROM
+    msg["To"] = to_email
+    msg.set_content(_body(code))
 
     try:
         if settings.SMTP_TLS:
@@ -85,5 +132,18 @@ def send_reset_email(to_email: str, code: str) -> bool:
                 server.send_message(msg)
         return True
     except Exception as e:  # noqa: BLE001
-        print(f"[password_reset] E-posta gönderilemedi ({to_email}): {type(e).__name__}: {e}")
+        print(f"[password_reset] SMTP gönderilemedi ({to_email}): {type(e).__name__}: {e}")
         return False
+
+
+def send_reset_email(to_email: str, code: str) -> bool:
+    """Kodu e-posta ile gönderir. Hiçbir sağlayıcı yapılandırılmamışsa False döner."""
+    if brevo_configured() and _send_via_brevo(to_email, code):
+        return True
+
+    if smtp_configured() and _send_via_smtp(to_email, code):
+        return True
+
+    if not brevo_configured() and not smtp_configured():
+        print(f"[password_reset] E-posta sağlayıcısı yok — {to_email} için kod (dev): {code}")
+    return False
