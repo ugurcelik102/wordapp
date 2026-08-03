@@ -187,16 +187,25 @@ async def complete_session(
     # İstatistikleri hesapla — YALNIZCA puanlı egzersizler (is_correct dolu olanlar).
     # 'sentence_fill' ve 'pronunciation' adımları puansızdır (is_correct = NULL);
     # bunlar doğruluğa dahil edilmemeli, aksi halde oran yanlış (düşük) çıkar.
+    #
+    # Aktif session yarıda bırakılıp yeniden açılabildiği için aynı
+    # (kelime, egzersiz türü) çifti birden fazla kez kaydedilmiş olabilir.
+    # Bu durumda yalnızca SON deneme sayılır; yoksa kullanıcı tüm soruları
+    # doğru yapsa bile eski yanlış denemeler oranı düşürür.
     exercises_result = await db.execute(
-        select(SessionExercise).where(
+        select(SessionExercise)
+        .where(
             SessionExercise.session_id == session_id,
             SessionExercise.is_correct.isnot(None),
         )
+        .order_by(SessionExercise.completed_at)
     )
-    exercises = exercises_result.scalars().all()
+    latest_attempts: dict[tuple[uuid.UUID, str], bool] = {}
+    for ex in exercises_result.scalars().all():
+        latest_attempts[(ex.word_id, ex.exercise_type)] = bool(ex.is_correct)
 
-    total = len(exercises)
-    correct = sum(1 for e in exercises if e.is_correct)
+    total = len(latest_attempts)
+    correct = sum(1 for is_correct in latest_attempts.values() if is_correct)
     accuracy = correct / total if total > 0 else 0.0
 
     # SRS'de ilerleme kaydeden kelimeler (repetitions > 0)

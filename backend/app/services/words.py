@@ -1,6 +1,6 @@
 import uuid
 import json
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, not_, delete, func
 from sqlalchemy.orm import selectinload
@@ -81,6 +81,89 @@ async def _pick_diverse_new_words(
     return picked
 
 
+class NoNewWordsError(Exception):
+    """Kullanıcıya sunulabilecek yeni kelime kalmadı."""
+
+
+# word_packages.word_count sütunundaki CHECK kısıtı.
+ALLOWED_WORD_COUNTS = (4, 6, 8)
+
+
+def _clamp_word_count(count: int) -> int:
+    """Seçilen kelime sayısını DB'nin izin verdiği değere indirir."""
+    allowed = [c for c in ALLOWED_WORD_COUNTS if c <= count]
+    if not allowed:
+        raise NoNewWordsError("Yeni kelime kalmadı")
+    return max(allowed)
+
+
+async def _select_package_word_ids(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    level_id: int,
+    word_count: int,
+    today: date,
+) -> list[uuid.UUID]:
+    """Günlük paketin kelimelerini seçer.
+
+    "Yeni Kelimeler" görevi YALNIZCA hiç görülmemiş kelimelerden oluşur.
+    Tekrar edilecek kelimeler ayrı bir görevde (Kelime Tekrarı) çalışılır;
+    SRS kelimelerini bu pakete karıştırmak paketin yarısının her gün aynı
+    kelimelerden oluşmasına yol açıyordu.
+    """
+    selected_word_ids: list[uuid.UUID] = await _pick_diverse_new_words(
+        db, user_id, level_id, word_count, []
+    )
+
+    # Seviyede görülmemiş kelime kalmadıysa en yakın seviyelerden doldur.
+    if len(selected_word_ids) < word_count:
+        selected_word_ids.extend(
+            await _pick_diverse_new_words(
+                db, user_id, level_id,
+                word_count - len(selected_word_ids),
+                selected_word_ids,
+                same_level_only=False,
+            )
+        )
+
+    # Havuz tamamen tükendiyse: son 14 günün paketlerinde YER ALMAYAN,
+    # en uzun süredir çalışılmayan kelimeleri rastgelelik katarak yeniden
+    # kullan. Böylece tükenmiş havuzda bile her gün aynı liste gelmez.
+    if len(selected_word_ids) < word_count:
+        recent_word_ids = (
+            select(WordPackageItem.word_id)
+            .join(WordPackage, WordPackage.id == WordPackageItem.package_id)
+            .where(
+                WordPackage.user_id == user_id,
+                WordPackage.package_date >= today - timedelta(days=14),
+            )
+        )
+        conditions = [
+            UserWordProgress.user_id == user_id,
+            not_(UserWordProgress.word_id.in_(recent_word_ids)),
+        ]
+        if selected_word_ids:
+            conditions.append(not_(UserWordProgress.word_id.in_(selected_word_ids)))
+
+        fallback_result = await db.execute(
+            select(UserWordProgress.word_id)
+            .where(*conditions)
+            .order_by(
+                UserWordProgress.last_reviewed_at.asc().nullsfirst(),
+                func.random(),
+            )
+            .limit(word_count - len(selected_word_ids))
+        )
+        selected_word_ids.extend(fallback_result.scalars().all())
+
+    if len(selected_word_ids) < ALLOWED_WORD_COUNTS[0]:
+        raise NoNewWordsError(
+            "Çalışılacak yeni kelime kalmadı. Seviyeni Ayarlar'dan değiştirebilirsin."
+        )
+
+    return selected_word_ids[:_clamp_word_count(len(selected_word_ids))]
+
+
 async def get_or_create_today_package(
     db: AsyncSession, user_id: uuid.UUID
 ) -> WordPackage:
@@ -102,55 +185,9 @@ async def get_or_create_today_package(
     word_count = profile.daily_word_count
     level_id = profile.current_level_id
 
-    selected_word_ids: list[uuid.UUID] = []
-
-    srs_result = await db.execute(
-        select(UserWordProgress.word_id)
-        .where(
-            UserWordProgress.user_id == user_id,
-            UserWordProgress.next_review_date <= today,
-            UserWordProgress.status.in_(["learning", "review"]),
-        )
-        .order_by(UserWordProgress.next_review_date)
-        .limit(word_count // 2)
+    selected_word_ids = await _select_package_word_ids(
+        db, user_id, level_id, word_count, today
     )
-    selected_word_ids.extend(srs_result.scalars().all())
-
-    remaining = word_count - len(selected_word_ids)
-    if remaining > 0:
-        selected_word_ids.extend(
-            await _pick_diverse_new_words(
-                db, user_id, level_id, remaining, selected_word_ids
-            )
-        )
-
-    # Hâlâ yetersizse: en yakın seviyelerden görülmemiş kelimelerle doldur.
-    if len(selected_word_ids) < word_count:
-        selected_word_ids.extend(
-            await _pick_diverse_new_words(
-                db, user_id, level_id,
-                word_count - len(selected_word_ids),
-                selected_word_ids,
-                same_level_only=False,
-            )
-        )
-
-    # Havuz tamamen tükendiyse: en uzun süredir çalışılmayan kelimeleri
-    # rastgelelik katarak yeniden kullan (her gün aynı kelimeler gelmesin).
-    if len(selected_word_ids) < word_count:
-        fallback_result = await db.execute(
-            select(UserWordProgress.word_id)
-            .where(
-                UserWordProgress.user_id == user_id,
-                not_(UserWordProgress.word_id.in_(selected_word_ids)),
-            )
-            .order_by(
-                UserWordProgress.last_reviewed_at.asc().nullsfirst(),
-                func.random(),
-            )
-            .limit(word_count - len(selected_word_ids))
-        )
-        selected_word_ids.extend(fallback_result.scalars().all())
 
     package = WordPackage(
         user_id=user_id,
@@ -203,56 +240,9 @@ async def create_new_package(db: AsyncSession, user_id: uuid.UUID) -> WordPackag
     word_count = profile.daily_word_count
     level_id = profile.current_level_id
 
-    selected_word_ids: list[uuid.UUID] = []
-
-    srs_result = await db.execute(
-        select(UserWordProgress.word_id).where(
-            UserWordProgress.user_id == user_id,
-            UserWordProgress.next_review_date <= today,
-            UserWordProgress.status.in_(["learning", "review"]),
-        ).order_by(UserWordProgress.next_review_date).limit(word_count // 2)
+    selected_word_ids = await _select_package_word_ids(
+        db, user_id, level_id, word_count, today
     )
-    selected_word_ids.extend(srs_result.scalars().all())
-
-    remaining = word_count - len(selected_word_ids)
-    if remaining > 0:
-        selected_word_ids.extend(
-            await _pick_diverse_new_words(
-                db, user_id, level_id, remaining, selected_word_ids
-            )
-        )
-
-    # Hâlâ yetersizse: en yakın seviyelerden görülmemiş kelimelerle doldur.
-    if len(selected_word_ids) < word_count:
-        selected_word_ids.extend(
-            await _pick_diverse_new_words(
-                db, user_id, level_id,
-                word_count - len(selected_word_ids),
-                selected_word_ids,
-                same_level_only=False,
-            )
-        )
-
-    # Havuz tamamen tükendiyse: en uzun süredir çalışılmayan kelimeleri
-    # rastgelelik katarak yeniden kullan (her gün aynı kelimeler gelmesin).
-    if len(selected_word_ids) < word_count:
-        fallback_result = await db.execute(
-            select(UserWordProgress.word_id)
-            .where(
-                UserWordProgress.user_id == user_id,
-                not_(UserWordProgress.word_id.in_(selected_word_ids)),
-            )
-            .order_by(
-                UserWordProgress.last_reviewed_at.asc().nullsfirst(),
-                func.random(),
-            )
-            .limit(word_count - len(selected_word_ids))
-        )
-        selected_word_ids.extend(fallback_result.scalars().all())
-
-    if not selected_word_ids:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=404, detail="Veritabanında hiç kelime bulunamadı")
 
     if package:
         # Mevcut paketi yeniden kullan: eski item'ları SQL düzeyinde sil

@@ -2,12 +2,14 @@ import uuid
 import random
 from datetime import date
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, func, not_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
 from app.core.deps import get_current_user
-from app.models.user import User
+from app.models.user import User, UserProfile
+from app.models.word import Word
+from app.models.progress import UserWordProgress
 from app.models.package import WordPackage, WordPackageItem
 from app.schemas.words import (
     WordPackageSchema, PackageWordSchema, WordDetailSchema, WordExampleSchema,
@@ -17,6 +19,7 @@ from app.schemas.words import (
 from app.services.words import (
     get_or_create_today_package, create_new_package, get_word_detail,
     get_review_words, submit_review, ensure_word_example, get_learned_words,
+    NoNewWordsError,
 )
 
 router = APIRouter()
@@ -28,7 +31,12 @@ async def today_package(
     current_user: User = Depends(get_current_user),
 ):
     """Bugünkü kelime paketini getirir (yoksa oluşturur)."""
-    package = await get_or_create_today_package(db, current_user.id)
+    try:
+        package = await get_or_create_today_package(db, current_user.id)
+    except NoNewWordsError as e:
+        # Havuz tükendiyse sessizce eski kelimeleri tekrar sunmak yerine
+        # kullanıcıya durumu açıkça söyle.
+        raise HTTPException(status_code=409, detail=str(e))
 
     words = []
     for item in package.items:
@@ -62,6 +70,8 @@ async def new_package(
     """Yeni paket oluşturur. Bugünkü varsa siler, profildeki daily_word_count kullanılır."""
     try:
         package = await create_new_package(db, current_user.id)
+    except NoNewWordsError as e:
+        raise HTTPException(status_code=409, detail=str(e))
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -110,6 +120,55 @@ async def today_package_status(
         exists=status_val is not None,
         completed=(status_val == "completed"),
     )
+
+
+@router.get("/pool")
+async def word_pool_status(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Teşhis: seviye başına toplam ve kullanıcının henüz görmediği kelime sayısı.
+
+    "Her gün aynı kelimeler geliyor" şikayetinde havuzun gerçekten tükenip
+    tükenmediğini görmek için kullanılır.
+    """
+    seen_subq = select(UserWordProgress.word_id).where(
+        UserWordProgress.user_id == current_user.id
+    )
+
+    total_rows = (
+        await db.execute(
+            select(Word.level_id, func.count())
+            .where(Word.is_active == True)
+            .group_by(Word.level_id)
+        )
+    ).all()
+    unseen_rows = (
+        await db.execute(
+            select(Word.level_id, func.count())
+            .where(Word.is_active == True, not_(Word.id.in_(seen_subq)))
+            .group_by(Word.level_id)
+        )
+    ).all()
+
+    unseen = {level: count for level, count in unseen_rows}
+    profile_level = (
+        await db.execute(
+            select(UserProfile.current_level_id).where(
+                UserProfile.user_id == current_user.id
+            )
+        )
+    ).scalar_one_or_none()
+
+    return {
+        "current_level_id": profile_level,
+        "levels": [
+            {"level_id": level, "total": count, "unseen": unseen.get(level, 0)}
+            for level, count in sorted(total_rows)
+        ],
+        "total_words": sum(count for _, count in total_rows),
+        "total_unseen": sum(unseen.values()),
+    }
 
 
 @router.get("/learned", response_model=LearnedWordsResponse)
