@@ -109,7 +109,7 @@ class WordRow:
     word: str
     definition: str
     definition_tr: str
-    ipa: str
+    ipa: str | None
     pos: str
     level_id: int
 

@@ -43,6 +43,12 @@ venv.bak/
 *.swo
 *~
 .DS_Store
+.claude/settings.local.json
+
+# Xcode
+xcuserdata/
+DerivedData/
+*.xcuserstate
 
 # Database
 *.db
