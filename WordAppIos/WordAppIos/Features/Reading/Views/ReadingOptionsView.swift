@@ -44,7 +44,7 @@ struct ReadingOptionsView: View {
                                 .font(.title3)
                                 .foregroundStyle(.white)
                                 .frame(width: 46, height: 46)
-                                .background(Color(red: 0.22, green: 0.74, blue: 0.28))
+                                .background(Color.brandPrimary)
                                 .clipShape(RoundedRectangle(cornerRadius: 12))
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Öğrenilen kelimelerden")

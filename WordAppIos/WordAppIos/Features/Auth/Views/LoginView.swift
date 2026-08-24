@@ -9,17 +9,29 @@ struct LoginView: View {
     @State private var password = ""
     @State private var showForgotPassword = false
 
+    private func loginIcon(_ name: String, _ color: Color) -> some View {
+        Image(systemName: name)
+            .font(.system(size: 26, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: 54, height: 54)
+            .background(color)
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 32) {
                     // Logo & Başlık
-                    VStack(spacing: 12) {
-                        Image(systemName: "text.book.closed.fill")
-                            .font(.system(size: 64))
-                            .foregroundStyle(.blue)
+                    VStack(spacing: 16) {
+                        HStack(spacing: 12) {
+                            loginIcon("globe.europe.africa.fill", Color(red: 0.20, green: 0.62, blue: 0.95))
+                            loginIcon("character.book.closed.fill", Color(red: 0.97, green: 0.62, blue: 0.10))
+                            loginIcon("text.bubble.fill", Color.brandPrimary)
+                            loginIcon("graduationcap.fill", Color(red: 0.51, green: 0.40, blue: 0.85))
+                        }
 
-                        Text("WordApp")
+                        Text("Vocabee")
                             .font(.largeTitle.bold())
 
                         Text("İngilizce kelime öğrenmenin\nen etkili yolu")

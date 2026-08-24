@@ -206,6 +206,12 @@ private struct ExamResultsView: View {
             .buttonStyle(.borderedProminent).tint(.purple)
             .padding()
         }
+        // Sınav bitiminde sonuca göre tek bir ses/titreşim geri bildirimi.
+        .onAppear {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                FeedbackSound.play(correct: percent >= 60)
+            }
+        }
     }
 
     @ViewBuilder

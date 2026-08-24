@@ -75,4 +75,16 @@ final class AppState: ObservableObject {
         currentUserId = nil
         route = .auth
     }
+
+    /// Hesabı sunucuda kalıcı olarak siler, ardından yerel oturumu/verileri temizler.
+    func deleteAccount() async throws {
+        try await APIService.deleteAccount()
+        if let uid = currentUserId {
+            UserSettings.shared.clearAll(for: uid)
+            RewardedAdManager.shared.clearAll(for: uid)
+        }
+        TokenStorage.shared.clear()
+        currentUserId = nil
+        route = .auth
+    }
 }

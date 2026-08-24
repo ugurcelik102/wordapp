@@ -27,7 +27,7 @@ final class FullTestViewModel: ObservableObject {
     func saveResult() async {
         guard !didSave, totalAnswered > 0 else { return }
         didSave = true
-        try? await APIService.saveTestResult(correct: totalCorrect, total: totalAnswered)
+        _ = try? await APIService.saveTestResult(correct: totalCorrect, total: totalAnswered)
     }
 
     var current: PackageWord? { index < words.count ? words[index] : nil }

@@ -86,4 +86,14 @@ final class UserSettings {
     func setReadingFontSize(_ size: Double, for userId: String) {
         defaults.set(size, forKey: readingFontKey(userId))
     }
+
+    // MARK: - Temizlik (hesap silme)
+
+    /// Hesap silindiğinde bu kullanıcıya ait tüm yerel tercihleri kaldırır.
+    func clearAll(for userId: String) {
+        defaults.removeObject(forKey: placementKey(userId))
+        defaults.removeObject(forKey: levelKey(userId))
+        defaults.removeObject(forKey: countKey(userId))
+        defaults.removeObject(forKey: readingFontKey(userId))
+    }
 }

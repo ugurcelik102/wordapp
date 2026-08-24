@@ -134,7 +134,8 @@ struct ReviewFlowView: View {
                 MCQView(
                     word: word,
                     options: vm.mcqOptions(for: word),
-                    correctAnswer: word.definitionTr ?? word.definition
+                    correctAnswer: word.definitionTr ?? word.definition,
+                    timerDuration: 6
                 ) { correct in
                     Task { await vm.answer(correct) }
                 }
@@ -149,6 +150,11 @@ struct ReviewFlowView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(.systemBackground))
         .task { await vm.load() }
+        // Görev bitti → bugünlük "Kelime Tekrarı" tamamlandı olarak işaretlenir.
+        .onChange(of: vm.finished) { _, isFinished in
+            guard isFinished else { return }
+            Task { _ = try? await APIService.completeDailyTask(.review) }
+        }
     }
 
     private var summary: some View {

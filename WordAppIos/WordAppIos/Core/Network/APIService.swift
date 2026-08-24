@@ -22,6 +22,10 @@ struct TestResultBody: Encodable {
     let total: Int
 }
 
+struct DailyTaskCompleteBody: Encodable {
+    let key: String
+}
+
 struct ResetPasswordBody: Encodable {
     let email: String
     let code: String
@@ -161,6 +165,11 @@ enum APIService {
         try await api.request("/auth/me")
     }
 
+    /// Hesabı ve tüm ilişkili verileri sunucuda kalıcı olarak siler.
+    static func deleteAccount() async throws {
+        try await api.requestNoContent("/users/me", method: "DELETE")
+    }
+
     // Profile
     static func getProfile() async throws -> UserProfile {
         try await api.request("/users/me/profile")
@@ -201,6 +210,17 @@ enum APIService {
     /// Bugünkü paketin durumu (paket oluşturmadan) — completed ise buton pasifleşir.
     static func todayPackageStatus() async throws -> PackageStatus {
         try await api.request("/words/package/status")
+    }
+
+    // Günlük görevler (sıralı: tekrar → yeni kelimeler → cümle içinde kullanım)
+    static func dailyTasksStatus() async throws -> DailyTasksStatus {
+        try await api.request("/daily-tasks/status")
+    }
+
+    @discardableResult
+    static func completeDailyTask(_ key: DailyTaskKey) async throws -> DailyTasksStatus {
+        try await api.request("/daily-tasks/complete", method: "POST",
+            body: DailyTaskCompleteBody(key: key.rawValue))
     }
 
     // Review (Kelime Tekrarı)

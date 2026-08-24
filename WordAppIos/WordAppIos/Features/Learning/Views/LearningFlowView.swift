@@ -254,8 +254,8 @@ struct OverviewView: View {
 
     @State private var currentIndex = 0
 
-    private let overviewGreen  = Color(red: 0.15, green: 0.61, blue: 0.30)
-    private let overviewYellow = Color(red: 1.00, green: 0.86, blue: 0.23)
+    private let overviewGreen  = Color.brandPrimary
+    private let overviewYellow = Color.brandSecondary
 
     var body: some View {
         VStack(spacing: 0) {
@@ -378,15 +378,17 @@ struct ExerciseCard: View {
     let prompt: String              // alt başlık, örn "DOĞRU ÇEVİRİ SEÇ"
     let headline: String            // büyük gösterilen kelime/anlam
     var topLabel: String? = nil     // opsiyonel üst etiket (örn bayrak)
+    /// Verilirse başlığın altında seslendirme butonu görünür.
+    var onSpeak: (() -> Void)? = nil
     let options: [String]
     let selected: String?
     let showResult: Bool
     let isCorrect: (String) -> Bool
     let onSelect: (String) -> Void
 
-    private let cardGreen     = Color(red: 0.15, green: 0.61, blue: 0.30)
+    private let cardGreen     = Color.brandPrimary
     private let cardGreenDark = Color(red: 0.10, green: 0.44, blue: 0.22)
-    private let yellow        = Color(red: 1.00, green: 0.86, blue: 0.23)
+    private let yellow        = Color.brandSecondary
     private let wrongRed      = Color(red: 0.86, green: 0.24, blue: 0.24)
 
     var body: some View {
@@ -407,6 +409,17 @@ struct ExerciseCard: View {
                     .font(.caption.weight(.semibold))
                     .tracking(1.5)
                     .foregroundStyle(yellow.opacity(0.70))
+                if let onSpeak {
+                    Button(action: onSpeak) {
+                        Image(systemName: "speaker.wave.2.fill")
+                            .font(.system(size: 20))
+                            .foregroundStyle(yellow)
+                            .frame(width: 52, height: 52)
+                            .overlay(Circle().stroke(yellow.opacity(0.5), lineWidth: 1.5))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, 4)
+                }
                 Spacer(minLength: 24)
             }
             .frame(maxWidth: .infinity, minHeight: 260)
@@ -480,36 +493,127 @@ struct MCQView: View {
     let word: PackageWord
     let options: [String]
     let correctAnswer: String
+    /// Saniye cinsinden yanıt süresi. nil ise sayaç gösterilmez (Learning/FullTest akışları etkilenmez).
+    var timerDuration: Double? = nil
     let onAnswer: (Bool) -> Void
 
     @State private var selected: String?
     @State private var showResult = false
+    @State private var timerProgress: CGFloat = 1
+    @State private var secondsLeft: Int = 0
+    @State private var timeoutTask: DispatchWorkItem?
+    @State private var countdownTimer: Timer?
 
     var body: some View {
         VStack {
             Spacer(minLength: 8)
-            ExerciseCard(
-                prompt: "DOĞRU ÇEVİRİ SEÇ",
-                headline: word.word,
-                options: options,
-                selected: selected,
-                showResult: showResult,
-                isCorrect: { $0 == correctAnswer },
-                onSelect: select
-            )
+            ZStack(alignment: .top) {
+                ExerciseCard(
+                    prompt: "DOĞRU ÇEVİRİ SEÇ",
+                    headline: word.word,
+                    onSpeak: speakWord,
+                    options: options,
+                    selected: selected,
+                    showResult: showResult,
+                    isCorrect: { $0 == correctAnswer },
+                    onSelect: select
+                )
+                if timerDuration != nil {
+                    CountdownRing(progress: timerProgress, secondsLeft: secondsLeft)
+                        .padding(.top, 18)
+                }
+            }
             Spacer(minLength: 8)
         }
         .padding(.horizontal, 16)
+        // Test edilen kelime karta girer girmez okunur.
+        .onAppear {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { speakWord() }
+            if let timerDuration {
+                startTimer(duration: timerDuration)
+            }
+        }
+        .onDisappear {
+            stopTimer()
+        }
+    }
+
+    private func speakWord() {
+        SpeechPlayer.shared.speak(word.word)
+    }
+
+    private func startTimer(duration: Double) {
+        timerProgress = 1
+        secondsLeft = Int(duration.rounded(.up))
+        withAnimation(.linear(duration: duration)) {
+            timerProgress = 0
+        }
+        countdownTimer?.invalidate()
+        countdownTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
+            if secondsLeft > 0 { secondsLeft -= 1 }
+        }
+        let task = DispatchWorkItem { timeoutExpired() }
+        timeoutTask = task
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration, execute: task)
+    }
+
+    private func stopTimer() {
+        countdownTimer?.invalidate()
+        countdownTimer = nil
+        timeoutTask?.cancel()
+    }
+
+    // Süre dolduğunda kullanıcı seçim yapmadıysa yanlış sayılır ve doğru cevap gösterilip bir sonraki kelimeye geçilir.
+    private func timeoutExpired() {
+        guard selected == nil else { return }
+        showResult = true
+        FeedbackSound.play(correct: false)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            onAnswer(false)
+        }
     }
 
     private func select(_ option: String) {
         guard selected == nil else { return }
+        stopTimer()
         selected = option
         showResult = true
         let correct = option == correctAnswer
+        FeedbackSound.play(correct: correct)
         DispatchQueue.main.asyncAfter(deadline: .now() + (correct ? 0.8 : 2.0)) {
             onAnswer(correct)
         }
+    }
+}
+
+// MARK: - Countdown Ring
+
+/// Kelime kartlarında kalan cevap süresini gösteren yuvarlak, sayısal sayaç.
+struct CountdownRing: View {
+    var progress: CGFloat   // 1 (dolu) -> 0 (bitti)
+    var secondsLeft: Int
+    var size: CGFloat = 54
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(Color.black.opacity(0.18))
+            Circle()
+                .stroke(Color.white.opacity(0.3), lineWidth: 5)
+            Circle()
+                .trim(from: 0, to: max(progress, 0.001))
+                .stroke(ringColor, style: StrokeStyle(lineWidth: 5, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+            Text("\(secondsLeft)")
+                .font(.system(size: 20, weight: .bold, design: .rounded))
+                .foregroundStyle(.white)
+                .monospacedDigit()
+        }
+        .frame(width: size, height: size)
+    }
+
+    private var ringColor: Color {
+        progress > 0.34 ? Color.brandSecondary : Color(red: 0.86, green: 0.24, blue: 0.24)
     }
 }
 
@@ -545,6 +649,11 @@ struct TrToEnView: View {
         selected = option
         showResult = true
         let correct = option == word.word
+        FeedbackSound.play(correct: correct)
+        // Doğru İngilizce karşılığı seslendir (yanlışta da öğretici olsun).
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+            SpeechPlayer.shared.speak(word.word)
+        }
         DispatchQueue.main.asyncAfter(deadline: .now() + (correct ? 0.8 : 2.0)) {
             onAnswer(correct)
         }
@@ -558,8 +667,8 @@ struct SentenceView: View {
     let detail: WordDetail?
     let onDone: () -> Void
 
-    private let cardGreen = Color(red: 0.15, green: 0.61, blue: 0.30)
-    private let yellow    = Color(red: 1.00, green: 0.86, blue: 0.23)
+    private let cardGreen = Color.brandPrimary
+    private let yellow    = Color.brandSecondary
     private let skyBlue   = Color(red: 0.36, green: 0.78, blue: 0.98)
 
     private var example: WordExample? {
@@ -655,8 +764,8 @@ struct PronunciationView: View {
     let word: PackageWord
     let onDone: () -> Void
 
-    private let cardGreen = Color(red: 0.15, green: 0.61, blue: 0.30)
-    private let yellow    = Color(red: 1.00, green: 0.86, blue: 0.23)
+    private let cardGreen = Color.brandPrimary
+    private let yellow    = Color.brandSecondary
 
     var body: some View {
         VStack {
@@ -668,10 +777,21 @@ struct PronunciationView: View {
                     .tracking(1.5)
                     .foregroundStyle(yellow.opacity(0.70))
 
-                Text(word.word)
-                    .font(.system(size: 44, weight: .bold))
-                    .foregroundStyle(yellow)
-                    .multilineTextAlignment(.center)
+                VStack(spacing: 8) {
+                    Text(word.word)
+                        .font(.system(size: 44, weight: .bold))
+                        .foregroundStyle(yellow)
+                        .multilineTextAlignment(.center)
+
+                    // Anlam da kartta görünsün — sadece sesi duyup anlamı
+                    // hatırlamak zorunda kalınmasın.
+                    Text(word.definitionTr ?? word.definition)
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 2)
+                }
 
                 // Ses ikonu — basınca kelimeyi seslendirir
                 Button {
@@ -726,29 +846,45 @@ struct SummaryView: View {
     let onReading: () -> Void
     let onDone: () -> Void
 
+    private let cardGreen = Color.brandPrimary
+    private let yellow    = Color.brandSecondary
+
+    /// Doğruluk yüzdesi — yuvarlama farkı yüzünden %100 yerine %99 görünmesin.
+    private var accuracyText: String {
+        "%\(Int((summary.accuracy * 100).rounded()))"
+    }
+
     var body: some View {
-        VStack(spacing: 32) {
-            Spacer()
+        VStack {
+            Spacer(minLength: 8)
 
-            Image(systemName: "star.fill")
-                .font(.system(size: 72))
-                .foregroundStyle(.yellow)
+            VStack(spacing: 24) {
+                Image(systemName: "star.fill")
+                    .font(.system(size: 64))
+                    .foregroundStyle(yellow)
 
-            Text("Harika iş!")
-                .font(.largeTitle.bold())
+                Text("Harika iş!")
+                    .font(.system(size: 34, weight: .bold))
+                    .foregroundStyle(yellow)
 
-            VStack(spacing: 16) {
-                StatRow(icon: "book.fill",      label: "Öğrenilen",  value: "\(wordCount) kelime")
-                StatRow(icon: "checkmark.circle.fill", label: "Doğruluk", value: "%\(Int(summary.accuracy * 100))")
-                StatRow(icon: "clock.fill",     label: "Süre",
-                        value: summary.durationSec.map { "\($0 / 60)dk \($0 % 60)sn" } ?? "-")
+                VStack(spacing: 14) {
+                    StatRow(icon: "book.fill", label: "Öğrenilen", value: "\(wordCount) kelime", tint: yellow)
+                    StatRow(icon: "checkmark.circle.fill", label: "Doğruluk", value: accuracyText, tint: yellow)
+                    StatRow(icon: "clock.fill", label: "Süre",
+                            value: summary.durationSec.map { "\($0 / 60)dk \($0 % 60)sn" } ?? "-",
+                            tint: yellow)
+                }
+                .padding(18)
+                .background(Color.white.opacity(0.14))
+                .clipShape(RoundedRectangle(cornerRadius: 16))
             }
-            .padding()
-            .background(Color(.systemGray6))
-            .clipShape(RoundedRectangle(cornerRadius: 16))
-            .padding(.horizontal)
+            .frame(maxWidth: .infinity)
+            .padding(28)
+            .frame(minHeight: 380)
+            .background(cardGreen)
+            .clipShape(RoundedRectangle(cornerRadius: 24))
 
-            Spacer()
+            Spacer(minLength: 8)
 
             VStack(spacing: 12) {
                 Button {
@@ -760,6 +896,7 @@ struct SummaryView: View {
                         .frame(height: 50)
                 }
                 .buttonStyle(.bordered)
+                .tint(cardGreen)
 
                 Button {
                     onDone()
@@ -770,9 +907,10 @@ struct SummaryView: View {
                         .frame(height: 50)
                 }
                 .buttonStyle(.borderedProminent)
+                .tint(cardGreen)
             }
-            .padding()
         }
+        .padding()
     }
 }
 
@@ -780,17 +918,19 @@ struct StatRow: View {
     let icon: String
     let label: String
     let value: String
+    var tint: Color = .brandSecondary
 
     var body: some View {
         HStack {
             Image(systemName: icon)
-                .foregroundStyle(.blue)
+                .foregroundStyle(tint)
                 .frame(width: 24)
             Text(label)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(tint.opacity(0.80))
             Spacer()
             Text(value)
                 .fontWeight(.semibold)
+                .foregroundStyle(tint)
         }
     }
 }

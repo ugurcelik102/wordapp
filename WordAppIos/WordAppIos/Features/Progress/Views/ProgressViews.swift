@@ -10,21 +10,31 @@ struct ProgressStrip: View {
         Button(action: onTap) {
             HStack(spacing: 14) {
                 Image(systemName: "chart.bar.xaxis")
-                    .font(.title3)
+                    .font(.system(size: 22, weight: .semibold))
                     .foregroundStyle(.white)
-                    .frame(width: 46, height: 46)
-                    .background(Color(red: 0.30, green: 0.42, blue: 0.90))
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .frame(width: 44, height: 44)
+                    .background(Color.black.opacity(0.15))
+                    .clipShape(Circle())
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("İlerleme").font(.headline).foregroundStyle(.primary)
-                    Text(subtitle).font(.caption).foregroundStyle(.secondary)
+                    Text("İlerleme")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(.white)
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.85))
                 }
-                Spacer()
-                Image(systemName: "chevron.right").foregroundStyle(.tertiary)
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.8))
             }
-            .padding()
-            .background(Color(.secondarySystemBackground))
-            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .padding(14)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .background(
+                LinearGradient(colors: [.accentBrown, .accentBrownDark],
+                               startPoint: .topLeading, endPoint: .bottomTrailing)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 18))
         }
         .buttonStyle(.plain)
     }

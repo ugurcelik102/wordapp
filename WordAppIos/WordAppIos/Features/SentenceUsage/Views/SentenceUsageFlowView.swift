@@ -41,11 +41,19 @@ struct FlowLayout: Layout {
 // MARK: - Ortak renkler
 
 private enum SUTheme {
-    static let blue    = Color(red: 0.16, green: 0.60, blue: 0.93)
-    static let orange  = Color(red: 0.96, green: 0.62, blue: 0.10)
-    static let orangeSoft = Color(red: 0.99, green: 0.83, blue: 0.52)
-    static let green   = Color(red: 0.18, green: 0.70, blue: 0.30)
-    static let red     = Color(red: 0.86, green: 0.24, blue: 0.24)
+    static let blue       = Color.accentBlue
+    static let green      = Color.success
+    static let red        = Color.danger
+    /// Tam-ekran zemin — "Kelime Tekrarı" kartıyla aynı sarı ton.
+    static let backdrop   = Color.taskYellow
+    /// Kart ve çip dolgusu — görev yeşili.
+    static let cardFill   = Color.taskGreen
+    /// Kart içindeki çipler (yeşil üstünde yeşil olmasın diye koyu ton).
+    static let chipInCard = Color.taskGreenDark
+    /// Yeşil üzerindeki metin/ikon — aynı sarı ton.
+    static let onCard     = Color.taskYellow
+    /// Sarı zemin üzerindeki başlık/ikon — koyu yeşil (okunabilirlik).
+    static let onBackdrop = Color.taskGreenDark
 }
 
 // MARK: - ViewModel
@@ -92,7 +100,7 @@ struct SentenceUsageFlowView: View {
 
     var body: some View {
         ZStack {
-            SUTheme.blue.ignoresSafeArea()
+            SUTheme.backdrop.ignoresSafeArea()
 
             VStack(spacing: 0) {
                 header
@@ -131,9 +139,15 @@ struct SentenceUsageFlowView: View {
             }
         }
         .animation(.easeOut(duration: 0.2), value: feedback?.id)
+        // Görev bitti → bugünlük "Cümle İçinde Kullanım" tamamlandı olarak işaretlenir.
+        .onChange(of: vm.finished) { _, isFinished in
+            guard isFinished else { return }
+            Task { _ = try? await APIService.completeDailyTask(.sentenceUsage) }
+        }
     }
 
     private func submit(correct: Bool, exercise: SentenceExercise) {
+        FeedbackSound.play(correct: correct)
         vm.record(correct: correct)
         feedback = FeedbackData(correct: correct, exercise: exercise)
     }
@@ -144,20 +158,20 @@ struct SentenceUsageFlowView: View {
                 Button(action: onDone) {
                     Image(systemName: "xmark")
                         .font(.headline)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(SUTheme.onBackdrop)
                 }
                 Spacer()
                 Text("CÜMLE İÇİNDE KULLANIM")
                     .font(.subheadline.weight(.bold))
                     .tracking(0.5)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(SUTheme.onBackdrop)
                 Spacer()
                 // denge için görünmez ikon
                 Image(systemName: "xmark").opacity(0)
             }
 
             ProgressView(value: vm.progress)
-                .tint(.white)
+                .tint(SUTheme.onBackdrop)
         }
         .padding()
     }
@@ -167,21 +181,21 @@ struct SentenceUsageFlowView: View {
             Spacer()
             Image(systemName: "checkmark.seal.fill")
                 .font(.system(size: 72))
-                .foregroundStyle(.white)
+                .foregroundStyle(SUTheme.onBackdrop)
             Text("Alıştırma Bitti!")
                 .font(.title.bold())
-                .foregroundStyle(.white)
+                .foregroundStyle(SUTheme.onBackdrop)
             Text("\(vm.correctCount) / \(vm.exercises.count) doğru")
                 .font(.title3)
-                .foregroundStyle(.white.opacity(0.9))
+                .foregroundStyle(SUTheme.onBackdrop.opacity(0.85))
             Spacer()
             Button(action: onDone) {
                 Text("Bitti")
                     .fontWeight(.semibold)
                     .frame(maxWidth: .infinity)
                     .frame(height: 52)
-                    .background(.white)
-                    .foregroundStyle(SUTheme.blue)
+                    .background(SUTheme.cardFill)
+                    .foregroundStyle(SUTheme.onCard)
                     .clipShape(RoundedRectangle(cornerRadius: 16))
             }
             .padding()
@@ -197,9 +211,9 @@ private struct CardShell<Content: View>: View {
     var body: some View {
         VStack(spacing: 0) { content }
             .frame(maxWidth: .infinity)
-            .background(.white)
-            .clipShape(RoundedRectangle(cornerRadius: 22))
-            .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
+            .background(SUTheme.cardFill)
+            .clipShape(RoundedRectangle(cornerRadius: Radius.large, style: .continuous))
+            .softShadow(.elevated)
     }
 }
 
@@ -211,11 +225,36 @@ private struct AIBadge: View {
             Text("AI")
                 .font(.caption.weight(.bold))
         }
-        .foregroundStyle(Color.purple)
+        .foregroundStyle(SUTheme.onCard)
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
-        .background(Color.purple.opacity(0.12))
+        .background(SUTheme.onCard.opacity(0.18))
         .clipShape(Capsule())
+    }
+}
+
+/// Seçilen kelimeyi geri almak için açık etiketli buton.
+/// (Kelimeye dokunup geri almak kullanıcılar için anlaşılır değildi.)
+private struct SilButton: View {
+    var title: String = "Sil"
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: "delete.left.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                Text(title)
+                    .font(.system(size: 15, weight: .semibold))
+            }
+            .foregroundStyle(SUTheme.onCard)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
+            .background(
+                Capsule().stroke(SUTheme.onCard.opacity(0.6), lineWidth: 1.5)
+            )
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -227,10 +266,10 @@ private struct CevaplaButton: View {
         Button(action: action) {
             Text("Cevapla")
                 .fontWeight(.semibold)
-                .foregroundStyle(.white)
+                .foregroundStyle(SUTheme.cardFill)
                 .frame(maxWidth: .infinity)
                 .frame(height: 52)
-                .background(enabled ? SUTheme.orange : SUTheme.orangeSoft)
+                .background(enabled ? SUTheme.onCard : SUTheme.onCard.opacity(0.45))
                 .clipShape(RoundedRectangle(cornerRadius: 26))
         }
         .disabled(!enabled)
@@ -244,18 +283,25 @@ private struct CevaplaButton: View {
 private struct WordChip: View {
     let text: String
     var faded: Bool = false
+    /// Kart içindeki (yeşil zemin üstündeki) çipler koyu yeşil dolgu kullanır.
+    var inCard: Bool = false
     let action: () -> Void
+
+    private var fill: Color {
+        let base = inCard ? SUTheme.chipInCard : SUTheme.cardFill
+        return faded ? base.opacity(0.35) : base
+    }
 
     var body: some View {
         Button(action: action) {
             Text(text)
-                .font(.system(size: 17, weight: .medium))
-                .foregroundStyle(faded ? Color.secondary.opacity(0.4) : Color.primary)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(faded ? SUTheme.onCard.opacity(0.45) : SUTheme.onCard)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
-                .background(faded ? Color(.systemGray5) : Color.white)
-                .clipShape(RoundedRectangle(cornerRadius: 14))
-                .shadow(color: .black.opacity(faded ? 0 : 0.10), radius: 3, y: 2)
+                .background(fill)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.button, style: .continuous))
+                .shadow(color: .black.opacity(faded ? 0 : 0.12), radius: 3, y: 2)
         }
         .buttonStyle(.plain)
         .disabled(faded)
@@ -283,12 +329,12 @@ struct OrderExerciseView: View {
 
                     Text("CÜMLEYİ OLUŞTURUN")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(SUTheme.onCard.opacity(0.8))
 
                     Text(exercise.prompt)
                         .font(.system(size: 22, weight: .bold))
                         .multilineTextAlignment(.center)
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(SUTheme.onCard)
 
                     HStack(spacing: 16) {
                         audioButton(icon: "tortoise.fill") {
@@ -299,18 +345,26 @@ struct OrderExerciseView: View {
                         }
                     }
 
-                    Divider()
+                    Divider().overlay(SUTheme.onCard.opacity(0.35))
 
                     // Kurulan cümle
                     FlowLayout(spacing: 8) {
                         ForEach(Array(placed.enumerated()), id: \.offset) { pos, idx in
-                            WordChip(text: chips[idx]) {
+                            WordChip(text: chips[idx], inCard: true) {
                                 placed.remove(at: pos)
                             }
                         }
                     }
                     .frame(minHeight: 60, alignment: .top)
                     .frame(maxWidth: .infinity, alignment: .leading)
+
+                    if !placed.isEmpty {
+                        HStack(spacing: 10) {
+                            Spacer()
+                            SilButton { placed.removeLast() }
+                            SilButton(title: "Temizle") { placed.removeAll() }
+                        }
+                    }
                 }
                 .padding(20)
 
@@ -329,20 +383,6 @@ struct OrderExerciseView: View {
                         if !usedSet.contains(idx) { placed.append(idx) }
                     }
                 }
-                if !placed.isEmpty {
-                    Button {
-                        placed.removeLast()
-                    } label: {
-                        Image(systemName: "delete.left.fill")
-                            .font(.system(size: 18))
-                            .foregroundStyle(SUTheme.blue)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 12)
-                            .background(Color.white)
-                            .clipShape(RoundedRectangle(cornerRadius: 14))
-                    }
-                    .buttonStyle(.plain)
-                }
             }
             .padding(.horizontal, 4)
         }
@@ -353,9 +393,9 @@ struct OrderExerciseView: View {
         Button(action: action) {
             Image(systemName: icon)
                 .font(.system(size: 20))
-                .foregroundStyle(SUTheme.blue)
+                .foregroundStyle(SUTheme.onCard)
                 .frame(width: 52, height: 52)
-                .overlay(Circle().stroke(SUTheme.blue.opacity(0.4), lineWidth: 1.5))
+                .overlay(Circle().stroke(SUTheme.onCard.opacity(0.5), lineWidth: 1.5))
         }
         .buttonStyle(.plain)
     }
@@ -379,20 +419,28 @@ struct BlankExerciseView: View {
 
                     Text("EKSİK KELİMEYİ BUL")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(SUTheme.onCard.opacity(0.8))
 
                     Text(exercise.turkish)
                         .font(.system(size: 20, weight: .bold))
                         .multilineTextAlignment(.center)
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(SUTheme.onCard)
 
-                    Divider()
+                    Divider().overlay(SUTheme.onCard.opacity(0.35))
 
                     Text(blankAttributed)
                         .font(.system(size: 22))
+                        .foregroundStyle(SUTheme.onCard)
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: .infinity)
                         .frame(minHeight: 60)
+
+                    if selected != nil {
+                        HStack {
+                            Spacer()
+                            SilButton { selected = nil }
+                        }
+                    }
                 }
                 .padding(20)
 
@@ -411,18 +459,6 @@ struct BlankExerciseView: View {
                         selected = idx
                     }
                 }
-                if selected != nil {
-                    Button { selected = nil } label: {
-                        Image(systemName: "delete.left.fill")
-                            .font(.system(size: 18))
-                            .foregroundStyle(SUTheme.blue)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 12)
-                            .background(Color.white)
-                            .clipShape(RoundedRectangle(cornerRadius: 14))
-                    }
-                    .buttonStyle(.plain)
-                }
             }
             .padding(.horizontal, 4)
         }
@@ -435,7 +471,7 @@ struct BlankExerciseView: View {
         let full = (exercise.blankEnglish ?? "").replacingOccurrences(of: "____", with: placeholder)
         var attr = AttributedString(full)
         if filled != nil, let range = attr.range(of: placeholder) {
-            attr[range].foregroundColor = SUTheme.blue
+            attr[range].foregroundColor = .white
             attr[range].font = .system(size: 22, weight: .bold)
         }
         return attr
@@ -495,8 +531,8 @@ private struct FeedbackSheet: View {
         }
         .padding()
         .background(
-            RoundedRectangle(cornerRadius: 24)
-                .fill(.white)
+            RoundedRectangle(cornerRadius: Radius.large, style: .continuous)
+                .fill(Color.cardBackground)
                 .ignoresSafeArea(edges: .bottom)
         )
         .onAppear {

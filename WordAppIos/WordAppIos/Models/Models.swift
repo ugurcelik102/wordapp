@@ -282,6 +282,49 @@ struct PackageStatus: Decodable {
     let completed: Bool
 }
 
+// MARK: - Günlük görevler (öncelik sıralı)
+
+/// Ana ekrandaki üç günlük görev. Sıra: tekrar → yeni kelimeler → cümle içinde kullanım.
+enum DailyTaskKey: String, Decodable, Hashable {
+    case review          = "review"
+    case newWords        = "new_words"
+    case sentenceUsage   = "sentence_usage"
+
+    /// Ana ekranda ve uyarı mesajlarında kullanılan görev adı.
+    var title: String {
+        switch self {
+        case .review:        return "Kelime Tekrarı"
+        case .newWords:      return "Yeni Kelimeler"
+        case .sentenceUsage: return "Cümle İçinde Kullanım"
+        }
+    }
+}
+
+struct DailyTaskItem: Decodable {
+    let key: DailyTaskKey
+    let order: Int
+    let completed: Bool
+    let unlocked: Bool
+}
+
+/// Ana ekrandaki günlük görev kartının görsel durumu.
+enum DailyTaskState {
+    case available    // sıradaki görev — renkli ve tıklanabilir
+    case completed    // bugünlük bitti — gri
+    case locked       // önceki görev bitmedi — gri
+
+    var isDisabled: Bool { self != .available }
+}
+
+struct DailyTasksStatus: Decodable {
+    let date: String
+    let tasks: [DailyTaskItem]
+
+    func item(_ key: DailyTaskKey) -> DailyTaskItem? {
+        tasks.first { $0.key == key }
+    }
+}
+
 struct LearnedWordsResponse: Decodable {
     let words: [PackageWord]
     let total: Int

@@ -14,6 +14,10 @@ struct SettingsView: View {
     @State private var isSaving = false
     @State private var errorMessage: String?
 
+    @State private var showDeleteConfirmation = false
+    @State private var isDeletingAccount = false
+    @State private var deleteErrorMessage: String?
+
     private var userId: String? { appState.currentUserId }
 
     private var currentLevelText: String {
@@ -83,6 +87,29 @@ struct SettingsView: View {
                         Label("Çıkış Yap", systemImage: "rectangle.portrait.and.arrow.right")
                     }
                 }
+
+                // MARK: Hesabı Sil
+                Section {
+                    Button(role: .destructive) {
+                        showDeleteConfirmation = true
+                    } label: {
+                        if isDeletingAccount {
+                            HStack(spacing: 8) {
+                                ProgressView()
+                                Text("Hesap Siliniyor...")
+                            }
+                        } else {
+                            Label("Hesabımı Sil", systemImage: "trash")
+                        }
+                    }
+                    .disabled(isDeletingAccount)
+                } footer: {
+                    if let deleteErrorMessage {
+                        Text(deleteErrorMessage).foregroundStyle(.red)
+                    } else {
+                        Text("Hesabın ve tüm ilerleme verilerin kalıcı olarak silinir. Bu işlem geri alınamaz.")
+                    }
+                }
             }
             .navigationTitle("Ayarlar")
             .navigationBarTitleDisplayMode(.inline)
@@ -96,6 +123,18 @@ struct SettingsView: View {
             .onChange(of: dailyWordCount) { _, newValue in
                 guard !isLoading, newValue != serverValue else { return }
                 Task { await save(newValue) }
+            }
+            .confirmationDialog(
+                "Hesabını kalıcı olarak silmek istediğine emin misin?",
+                isPresented: $showDeleteConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Hesabımı Sil", role: .destructive) {
+                    Task { await deleteAccount() }
+                }
+                Button("Vazgeç", role: .cancel) {}
+            } message: {
+                Text("Tüm ilerleme, kelime kayıtları ve hesap bilgilerin kalıcı olarak silinecek. Bu işlem geri alınamaz.")
             }
         }
     }
@@ -122,6 +161,18 @@ struct SettingsView: View {
             errorMessage = "Profil yüklenemedi (\(error.localizedDescription)). Yerel değer gösteriliyor."
         }
         isLoading = false
+    }
+
+    private func deleteAccount() async {
+        isDeletingAccount = true
+        deleteErrorMessage = nil
+        do {
+            try await appState.deleteAccount()
+            dismiss()
+        } catch {
+            deleteErrorMessage = "Hesap silinemedi: \(error.localizedDescription)"
+        }
+        isDeletingAccount = false
     }
 
     private func save(_ newValue: Int) async {
