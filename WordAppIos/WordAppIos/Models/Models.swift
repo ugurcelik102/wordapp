@@ -1,40 +1,7 @@
 import Foundation
 
-// MARK: - Auth
 
-struct TokenResponse: Decodable {
-    let accessToken: String
-    let tokenType: String
 
-    enum CodingKeys: String, CodingKey {
-        case accessToken = "access_token"
-        case tokenType   = "token_type"
-    }
-}
-
-struct ForgotPasswordResponse: Decodable {
-    let message: String
-    let devCode: String?
-
-    enum CodingKeys: String, CodingKey {
-        case message
-        case devCode = "dev_code"
-    }
-}
-
-struct UserResponse: Decodable {
-    let id: String
-    let email: String
-    let name: String
-    let currentLevelId: Int?
-    let placementCompleted: Bool?
-
-    enum CodingKeys: String, CodingKey {
-        case id, email, name
-        case currentLevelId     = "current_level_id"
-        case placementCompleted = "placement_completed"
-    }
-}
 
 struct UserProfile: Decodable {
     let dailyWordCount: Int
@@ -241,22 +208,6 @@ struct SessionSummary: Decodable {
 
 // MARK: - Reading
 
-struct ReadingPassage: Decodable {
-    let id: String
-    let sessionId: String
-    let content: String
-    let wordCount: Int?
-    let targetWordTexts: [String]?
-    let modelUsed: String?
-
-    enum CodingKeys: String, CodingKey {
-        case id, content
-        case sessionId       = "session_id"
-        case wordCount       = "word_count"
-        case targetWordTexts = "target_word_texts"
-        case modelUsed       = "model_used"
-    }
-}
 
 struct GlossaryItem: Decodable, Identifiable {
     var id: String { word }

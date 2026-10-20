@@ -15,16 +15,21 @@ struct RootView: View {
             }
         }
         .task {
+            // Kelime havuzu (~2000 kelime) açılış animasyonu sürerken yüklenir.
+            appState.loadWordPool()
             try? await Task.sleep(nanoseconds: 1_600_000_000)
             withAnimation(.easeOut(duration: 0.4)) { showSplash = false }
+        }
+        .alert("Bir sorun oluştu", isPresented: .constant(appState.loadError != nil)) {
+            Button("Tamam") { appState.loadError = nil }
+        } message: {
+            Text(appState.loadError ?? "")
         }
     }
 
     @ViewBuilder
     private var content: some View {
         switch appState.route {
-        case .auth:
-            AuthView()
         case .placement:
             PlacementTestView()
         case .home:

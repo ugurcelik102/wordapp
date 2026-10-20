@@ -98,16 +98,14 @@ final class HomeViewModel: ObservableObject {
     // MARK: - Durum
 
     /// Bugünkü görev durumlarını tazeler (paket durumu + günlük görev kayıtları).
-    func refreshStatus() async {
-        if let status = try? await APIService.todayPackageStatus() {
-            newWordsLocked = status.completed
-        }
-        dailyTasks = try? await APIService.dailyTasksStatus()
+    func refreshStatus() {
+        newWordsLocked = LocalAPI.todayPackageStatus().completed
+        dailyTasks = LocalAPI.dailyTasksStatus()
     }
 
     /// Ana menüdeki ilerleme özetini yükler.
-    func loadProgress() async {
-        progress = try? await APIService.progressSummary()
+    func loadProgress() {
+        progress = LocalAPI.progressSummary()
     }
 
     // MARK: - Yeni Kelimeler
@@ -123,7 +121,7 @@ final class HomeViewModel: ObservableObject {
         banner = nil
         defer { isWorking = false }
         do {
-            let pkg = try await APIService.todayPackage()
+            let pkg = try LocalAPI.todayPackage()
             if pkg.status == "completed" {
                 newWordsLocked = true
                 banner = "Bugünkü yeni kelimeleri tamamladın. Yeni kelimeler yarın gelecek."
@@ -146,18 +144,14 @@ final class HomeViewModel: ObservableObject {
         isWorking = true
         banner = nil
         defer { isWorking = false }
-        do {
-            let resp = try await APIService.reviewWords()
-            if resp.words.isEmpty {
-                // Tekrar edilecek kelime yoksa görev bugünlük tamamlanmış sayılır,
-                // aksi halde sıradaki görevler hiç açılmaz.
-                dailyTasks = try? await APIService.completeDailyTask(.review)
-                banner = "Bugün tekrar edilecek kelime yok. Yeni Kelimeler görevi açıldı."
-            } else {
-                destination = .review(resp.words)
-            }
-        } catch {
-            banner = error.localizedDescription
+        let resp = LocalAPI.reviewWords()
+        if resp.words.isEmpty {
+            // Tekrar edilecek kelime yoksa görev bugünlük tamamlanmış sayılır,
+            // aksi halde sıradaki görevler hiç açılmaz.
+            dailyTasks = LocalAPI.completeDailyTask(.review)
+            banner = "Bugün tekrar edilecek kelime yok. Yeni Kelimeler görevi açıldı."
+        } else {
+            destination = .review(resp.words)
         }
     }
 
@@ -167,15 +161,11 @@ final class HomeViewModel: ObservableObject {
         isWorking = true
         banner = nil
         defer { isWorking = false }
-        do {
-            let resp = try await APIService.learnedWords(offset: 0, limit: 8)
-            if resp.words.isEmpty {
-                banner = "Henüz test edilecek öğrenilmiş kelime yok. Önce birkaç kelime çalış."
-            } else {
-                destination = .fullTest(words: resp.words, offset: resp.offset, total: resp.total)
-            }
-        } catch {
-            banner = error.localizedDescription
+        let resp = LocalAPI.learnedWords(offset: 0, limit: 8)
+        if resp.words.isEmpty {
+            banner = "Henüz test edilecek öğrenilmiş kelime yok. Önce birkaç kelime çalış."
+        } else {
+            destination = .fullTest(words: resp.words, offset: resp.offset, total: resp.total)
         }
     }
 

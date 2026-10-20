@@ -8,7 +8,6 @@ final class ReviewViewModel: ObservableObject {
     @Published var isLoading = true
     @Published var correctCount = 0
     @Published var finished = false
-    @Published var submitError: String?   // submit başarısızsa kullanıcıya gösterilir
 
     let words: [PackageWord]
 
@@ -25,17 +24,10 @@ final class ReviewViewModel: ObservableObject {
         words.isEmpty ? 0 : Double(index) / Double(words.count)
     }
 
-    func load() async {
-        await withTaskGroup(of: (String, WordDetail?).self) { group in
-            for word in words {
-                group.addTask {
-                    let detail = try? await APIService.wordDetail(id: word.id)
-                    return (word.id, detail)
-                }
-            }
-            for await (id, detail) in group {
-                if let detail { details[id] = detail }
-            }
+    func load() {
+        // Kelime detayları artık cihazdan okunuyor; ağ beklemesi yok.
+        for word in words {
+            details[word.id] = try? LocalAPI.wordDetail(id: word.id)
         }
         isLoading = false
     }
@@ -52,19 +44,12 @@ final class ReviewViewModel: ObservableObject {
         return options
     }
 
-    func answer(_ correct: Bool) async {
+    func answer(_ correct: Bool) {
         guard let word = current else { return }
         if correct { correctCount += 1 }
 
-        // Submit hatasını sessizce yutma: başarısız olursa SRS güncellenmez
-        // ve kelime tekrar tekrar gelir. Hatayı kullanıcıya ve log'a bildir.
-        do {
-            _ = try await APIService.submitReview(wordId: word.id, isCorrect: correct)
-            submitError = nil
-        } catch {
-            submitError = "Tekrar sonucu kaydedilemedi. İnternet bağlantını kontrol et."
-            print("[Review] submitReview hatası (word=\(word.id)): \(error)")
-        }
+        // SRS güncellemesi cihazda yapılır; ağ hatası ihtimali yok.
+        LocalAPI.submitReview(wordId: word.id, isCorrect: correct)
 
         if index + 1 < words.count {
             index += 1
@@ -107,21 +92,6 @@ struct ReviewFlowView: View {
                 .tint(.green)
                 .padding(.horizontal)
 
-            if let submitError = vm.submitError {
-                HStack(spacing: 8) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
-                    Text(submitError)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Spacer()
-                }
-                .padding(.horizontal)
-                .padding(.top, 8)
-                .transition(.opacity)
-            }
-
             Divider().padding(.top, 8)
 
             if vm.isLoading {
@@ -137,7 +107,7 @@ struct ReviewFlowView: View {
                     correctAnswer: word.definitionTr ?? word.definition,
                     timerDuration: 6
                 ) { correct in
-                    Task { await vm.answer(correct) }
+                    vm.answer(correct)
                 }
                 .id(word.id)
             } else {
@@ -149,11 +119,11 @@ struct ReviewFlowView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(.systemBackground))
-        .task { await vm.load() }
+        .task { vm.load() }
         // Görev bitti → bugünlük "Kelime Tekrarı" tamamlandı olarak işaretlenir.
         .onChange(of: vm.finished) { _, isFinished in
             guard isFinished else { return }
-            Task { _ = try? await APIService.completeDailyTask(.review) }
+            LocalAPI.completeDailyTask(.review)
         }
     }
 

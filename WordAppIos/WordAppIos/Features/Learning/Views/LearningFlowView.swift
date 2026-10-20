@@ -239,7 +239,7 @@ struct LearningFlowView: View {
             )
 
         case .reading(let sessionId):
-            ReadingView(sessionId: sessionId, userId: appState.currentUserId, onDone: onComplete)
+            ReadingView(sessionId: sessionId, onDone: onComplete)
         }
     }
 }

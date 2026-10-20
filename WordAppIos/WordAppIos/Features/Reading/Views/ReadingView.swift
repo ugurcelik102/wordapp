@@ -2,10 +2,9 @@ import SwiftUI
 
 struct ReadingView: View {
     let sessionId: String
-    var userId: String? = nil
     let onDone: () -> Void
 
-    @State private var passage: ReadingPassage?
+    @State private var passage: ReadingFromLearned?
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var fontSize: CGFloat = CGFloat(UserSettings.defaultReadingFontSize)
@@ -106,14 +105,10 @@ struct ReadingView: View {
             .onDisappear { speech.stop() }
             .task { await load() }
             .onAppear {
-                if let userId {
-                    fontSize = CGFloat(UserSettings.shared.readingFontSize(for: userId))
-                }
+                fontSize = CGFloat(ProgressStore.shared.readingFontSize)
             }
             .onChange(of: fontSize) { _, newValue in
-                if let userId {
-                    UserSettings.shared.setReadingFontSize(Double(newValue), for: userId)
-                }
+                ProgressStore.shared.setReadingFontSize(Double(newValue))
             }
         }
     }

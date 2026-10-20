@@ -118,14 +118,14 @@ struct ProgressDetailView: View {
                     ProgressView()
                 }
             }
-            .task { await load() }
+            .task { load() }
         }
     }
 
-    private func load() async {
+    private func load() {
         isLoading = true
-        summary = try? await APIService.progressSummary()
-        categories = (try? await APIService.learnedByCategory())?.categories ?? []
+        summary = LocalAPI.progressSummary()
+        categories = LocalAPI.learnedByCategory().categories
         isLoading = false
     }
 

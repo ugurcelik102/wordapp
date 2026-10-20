@@ -8,9 +8,6 @@ struct HomeView: View {
     @State private var showProgress = false
     @StateObject private var ads = RewardedAdManager.shared
 
-    /// Reklam kilidi kullanıcı bazlı tutulur; oturum yoksa ortak anahtar.
-    private var adUserId: String { appState.currentUserId ?? "guest" }
-
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -22,18 +19,18 @@ struct HomeView: View {
                         onReview:   { Task { await vm.startReview() } },
                         onSentence: { Task { await vm.startSentenceUsage() } },
                         onReading: {
-                            ads.run(.reading, userId: adUserId) {
+                            ads.run(.reading) {
                                 showReadingOptions = true
                             }
                         },
                         onExam: {
-                            ads.run(.exam, userId: adUserId) {
+                            ads.run(.exam) {
                                 Task { await vm.startExam() }
                             }
                         },
                         onFullTest: { Task { await vm.startFullTest() } },
-                        readingAdLocked: !ads.isUnlocked(.reading, userId: adUserId),
-                        examAdLocked:    !ads.isUnlocked(.exam, userId: adUserId)
+                        readingAdLocked: !ads.isUnlocked(.reading),
+                        examAdLocked:    !ads.isUnlocked(.exam)
                     )
 
                     ProgressStrip(summary: vm.progress) { showProgress = true }
@@ -56,8 +53,8 @@ struct HomeView: View {
                 .ignoresSafeArea()
             )
             .task {
-                await vm.refreshStatus()
-                await vm.loadProgress()
+                vm.refreshStatus()
+                vm.loadProgress()
             }
             .navigationTitle("Günün görevleri")
             .navigationBarTitleDisplayMode(.large)
@@ -87,22 +84,22 @@ struct HomeView: View {
                 case .learning(let pkg):
                     LearningFlowView(package: pkg) {
                         vm.destination = nil
-                        Task { await vm.refreshStatus() }
+                        vm.refreshStatus()
                     }
                     .environmentObject(appState)
                 case .review(let words):
                     ReviewFlowView(words: words) {
                         vm.destination = nil
-                        Task { await vm.refreshStatus() }
+                        vm.refreshStatus()
                     }
                 case .reading(let content, let wordCount, let targets, let glossary):
-                    ReadingResultView(content: content, wordCount: wordCount, targets: targets, glossary: glossary, userId: appState.currentUserId) {
+                    ReadingResultView(content: content, wordCount: wordCount, targets: targets, glossary: glossary) {
                         vm.destination = nil
                     }
                 case .sentenceUsage(let exercises):
                     SentenceUsageFlowView(exercises: exercises) {
                         vm.destination = nil
-                        Task { await vm.refreshStatus() }
+                        vm.refreshStatus()
                     }
                 case .exam(let questions, let durationSec):
                     ExamFlowView(questions: questions, durationSec: durationSec) {
@@ -111,7 +108,7 @@ struct HomeView: View {
                 case .fullTest(let words, let offset, let total):
                     FullTestFlowView(words: words, offset: offset, total: total) {
                         vm.destination = nil
-                        Task { await vm.loadProgress() }
+                        vm.loadProgress()
                     }
                 }
             }

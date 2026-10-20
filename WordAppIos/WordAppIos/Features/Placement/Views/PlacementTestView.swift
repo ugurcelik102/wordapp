@@ -242,7 +242,7 @@ struct PlacementResultView: View {
 
                 // Devam et
                 Button {
-                    Task { await vm.updateLevel(levelId: selectedLevelId, appState: appState) }
+                    vm.updateLevel(levelId: selectedLevelId, appState: appState)
                 } label: {
                     Text("Öğrenmeye Başla")
                         .fontWeight(.semibold)

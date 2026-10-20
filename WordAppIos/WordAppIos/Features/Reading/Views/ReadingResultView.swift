@@ -6,7 +6,6 @@ struct ReadingResultView: View {
     let wordCount: Int?
     let targets: [String]
     var glossary: [GlossaryItem] = []
-    var userId: String? = nil
     let onDone: () -> Void
 
     @State private var fontSize: CGFloat = CGFloat(UserSettings.defaultReadingFontSize)
@@ -40,15 +39,11 @@ struct ReadingResultView: View {
                 .padding()
             }
             .onAppear {
-                if let userId {
-                    fontSize = CGFloat(UserSettings.shared.readingFontSize(for: userId))
-                }
+                fontSize = CGFloat(ProgressStore.shared.readingFontSize)
             }
             .onDisappear { speech.stop() }
             .onChange(of: fontSize) { _, newValue in
-                if let userId {
-                    UserSettings.shared.setReadingFontSize(Double(newValue), for: userId)
-                }
+                ProgressStore.shared.setReadingFontSize(Double(newValue))
             }
             .navigationTitle("Okuma")
             .navigationBarTitleDisplayMode(.inline)

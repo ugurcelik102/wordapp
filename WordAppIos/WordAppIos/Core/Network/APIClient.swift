@@ -42,9 +42,8 @@ final class APIClient {
         req.httpMethod = method
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        if let token = TokenStorage.shared.token {
-            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        }
+        // Üyelik yok; sunucu kotayı cihaz başına uygular.
+        req.setValue(DeviceID.current, forHTTPHeaderField: "X-Device-Id")
 
         if let body {
             req.httpBody = try JSONEncoder().encode(body)
@@ -66,14 +65,8 @@ final class APIClient {
             // Önce {detail: ...} dene; yoksa ham gövdeyi göster (teşhis için).
             let detail = (try? JSONDecoder().decode(APIErrorResponse.self, from: data))?.detail
 
-            // Oturum düşmesi YALNIZCA kimliği doğrulanmış isteklerde (token varken) geçerli.
-            // Token yokken gelen 401 bir giriş/kimlik-bilgisi hatasıdır → detay mesajını göster.
-            if http.statusCode == 401, TokenStorage.shared.token != nil {
-                TokenStorage.shared.clear()
-                throw APIError.unauthorized
-            }
-
             // 4xx istemci hataları: backend'in kullanıcıya yönelik mesajını olduğu gibi ilet.
+            // (Üyelik olmadığı için 401 beklenmez; 429 kota mesajı buradan geçer.)
             if (400..<500).contains(http.statusCode), let detail {
                 throw APIError.badRequest(detail)
             }
@@ -107,9 +100,8 @@ final class APIClient {
         req.httpMethod = method
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        if let token = TokenStorage.shared.token {
-            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        }
+        // Üyelik yok; sunucu kotayı cihaz başına uygular.
+        req.setValue(DeviceID.current, forHTTPHeaderField: "X-Device-Id")
 
         if let body {
             req.httpBody = try JSONEncoder().encode(body)
@@ -129,11 +121,6 @@ final class APIClient {
 
         guard (200..<300).contains(http.statusCode) else {
             let detail = (try? JSONDecoder().decode(APIErrorResponse.self, from: data))?.detail
-
-            if http.statusCode == 401, TokenStorage.shared.token != nil {
-                TokenStorage.shared.clear()
-                throw APIError.unauthorized
-            }
 
             if (400..<500).contains(http.statusCode), let detail {
                 throw APIError.badRequest(detail)

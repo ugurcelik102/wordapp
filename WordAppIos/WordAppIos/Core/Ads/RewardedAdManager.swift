@@ -83,8 +83,8 @@ final class RewardedAdManager: NSObject, ObservableObject {
 
     // MARK: Kilit durumu
 
-    private func key(_ feature: AdGatedFeature, userId: String) -> String {
-        "ad_unlock_\(feature.rawValue)_\(userId)"
+    private func key(_ feature: AdGatedFeature) -> String {
+        "ad_unlock_\(feature.rawValue)"
     }
 
     private var today: String {
@@ -94,28 +94,27 @@ final class RewardedAdManager: NSObject, ObservableObject {
     }
 
     /// Özellik bugün için açılmış mı? (Günde bir reklam yeterli.)
-    func isUnlocked(_ feature: AdGatedFeature, userId: String) -> Bool {
-        defaults.string(forKey: key(feature, userId: userId)) == today
+    func isUnlocked(_ feature: AdGatedFeature) -> Bool {
+        defaults.string(forKey: key(feature)) == today
     }
 
     /// Ödül verildi → özellik bugün boyunca açık.
-    func unlock(_ feature: AdGatedFeature, userId: String) {
-        defaults.set(today, forKey: key(feature, userId: userId))
+    func unlock(_ feature: AdGatedFeature) {
+        defaults.set(today, forKey: key(feature))
     }
 
     // MARK: Akış
 
     /// Özellik bugün açıksa `action` doğrudan çalışır; değilse reklam gösterilir
     /// ve ödül kazanılınca `action` çalışır.
-    func run(_ feature: AdGatedFeature, userId: String, action: @escaping () -> Void) {
-        if isUnlocked(feature, userId: userId) {
+    func run(_ feature: AdGatedFeature, action: @escaping () -> Void) {
+        if isUnlocked(feature) {
             action()
             return
         }
 
         onReward = action
         currentFeature = feature
-        currentUserId = userId
         rewardEarned = false
 
         Task { @MainActor in
@@ -144,8 +143,8 @@ final class RewardedAdManager: NSObject, ObservableObject {
 
     /// Ödülü ver, özelliği aç ve bekleyen işi çalıştır.
     private func grantReward() {
-        if let feature = currentFeature, let userId = currentUserId {
-            unlock(feature, userId: userId)
+        if let feature = currentFeature {
+            unlock(feature)
         }
         let work = onReward
         clearPending()
@@ -160,9 +159,9 @@ final class RewardedAdManager: NSObject, ObservableObject {
     }
 
     /// Hesap silindiğinde yerel kilit kayıtlarını temizler.
-    func clearAll(for userId: String) {
+    func clearAll() {
         for feature in AdGatedFeature.allCases {
-            defaults.removeObject(forKey: key(feature, userId: userId))
+            defaults.removeObject(forKey: key(feature))
         }
     }
 

@@ -10,8 +10,6 @@ final class FullTestViewModel: ObservableObject {
     @Published var totalAnswered = 0
     @Published var batchDone = false
     @Published var finished = false
-    @Published var isLoading = false
-    @Published var errorMessage: String?
 
     private(set) var offset: Int
     let total: Int
@@ -24,10 +22,10 @@ final class FullTestViewModel: ObservableObject {
     }
 
     /// Test sonucunu kaydeder (bir kez).
-    func saveResult() async {
+    func saveResult() {
         guard !didSave, totalAnswered > 0 else { return }
         didSave = true
-        _ = try? await APIService.saveTestResult(correct: totalCorrect, total: totalAnswered)
+        LocalAPI.saveTestResult(correct: totalCorrect, total: totalAnswered)
     }
 
     var current: PackageWord? { index < words.count ? words[index] : nil }
@@ -57,23 +55,16 @@ final class FullTestViewModel: ObservableObject {
         }
     }
 
-    func continueNextBatch() async {
-        isLoading = true
-        errorMessage = nil
-        defer { isLoading = false }
-        do {
-            let resp = try await APIService.learnedWords(offset: offset + words.count, limit: 8)
-            if resp.words.isEmpty {
-                finished = true
-            } else {
-                offset = resp.offset
-                words = resp.words
-                index = 0
-                batchCorrect = 0
-                batchDone = false
-            }
-        } catch {
-            errorMessage = error.localizedDescription
+    func continueNextBatch() {
+        let resp = LocalAPI.learnedWords(offset: offset + words.count, limit: 8)
+        if resp.words.isEmpty {
+            finished = true
+        } else {
+            offset = resp.offset
+            words = resp.words
+            index = 0
+            batchCorrect = 0
+            batchDone = false
         }
     }
 }
@@ -94,21 +85,11 @@ struct FullTestFlowView: View {
             content
         }
         .background(Color(.systemBackground).ignoresSafeArea())
-        .overlay {
-            if vm.isLoading {
-                ZStack {
-                    Color.black.opacity(0.15).ignoresSafeArea()
-                    ProgressView("Sonraki paket hazırlanıyor...")
-                        .padding(24)
-                        .background(.regularMaterial)
-                        .clipShape(RoundedRectangle(cornerRadius: 16))
-                }
-            }
-        }
     }
 
     private func exit() {
-        Task { await vm.saveResult(); onDone() }
+        vm.saveResult()
+        onDone()
     }
 
     private var header: some View {
@@ -163,7 +144,7 @@ struct FullTestFlowView: View {
             Spacer()
             VStack(spacing: 12) {
                 if vm.hasMore {
-                    Button { Task { await vm.continueNextBatch() } } label: {
+                    Button { vm.continueNextBatch() } label: {
                         Text("Devam Et")
                             .fontWeight(.semibold)
                             .frame(maxWidth: .infinity)
@@ -218,6 +199,6 @@ struct FullTestFlowView: View {
             .padding()
         }
         .padding()
-        .onAppear { Task { await vm.saveResult() } }
+        .onAppear { vm.saveResult() }
     }
 }

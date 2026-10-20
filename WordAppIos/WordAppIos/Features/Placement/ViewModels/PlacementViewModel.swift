@@ -36,11 +36,7 @@ final class PlacementViewModel: ObservableObject {
         errorMessage = nil
         defer { isLoading = false }
 
-        do {
-            test = try await APIService.getPlacementTest()
-        } catch {
-            errorMessage = error.localizedDescription
-        }
+        test = LocalAPI.getPlacementTest()
     }
 
     func selectAnswer(_ option: String) {
@@ -63,20 +59,15 @@ final class PlacementViewModel: ObservableObject {
 
         let questionAnswers = answers.map { QuestionAnswer(questionId: $0.key, selectedOption: $0.value) }
 
-        do {
-            result = try await APIService.submitPlacement(testId: test.testId, answers: questionAnswers)
-        } catch {
-            errorMessage = error.localizedDescription
-        }
+        // Puanlama cihazda yapılır; doğru cevaplar testi üreten LocalAPI'de tutulur.
+        result = LocalAPI.submitPlacement(
+            testId: test.testId, answers: questionAnswers, questions: test.questions
+        )
     }
 
-    func updateLevel(levelId: Int, appState: AppState) async {
-        guard let result else { return }
-        do {
-            _ = try await APIService.updateLevel(resultId: result.resultId, levelId: levelId)
-            appState.didCompletePlacement(levelId: levelId)
-        } catch {
-            errorMessage = error.localizedDescription
-        }
+    func updateLevel(levelId: Int, appState: AppState) {
+        guard result != nil else { return }
+        LocalAPI.updateLevel(levelId: levelId)
+        appState.didCompletePlacement(levelId: levelId)
     }
 }

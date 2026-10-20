@@ -142,7 +142,7 @@ struct SentenceUsageFlowView: View {
         // Görev bitti → bugünlük "Cümle İçinde Kullanım" tamamlandı olarak işaretlenir.
         .onChange(of: vm.finished) { _, isFinished in
             guard isFinished else { return }
-            Task { _ = try? await APIService.completeDailyTask(.sentenceUsage) }
+            LocalAPI.completeDailyTask(.sentenceUsage)
         }
     }
 

@@ -53,7 +53,7 @@ final class LearningViewModel: ObservableObject {
         defer { isLoading = false }
 
         do {
-            let session = try await APIService.createSession(packageId: package.id)
+            let session = try LocalAPI.createSession(packageId: package.id)
             sessionId = session.id
             startTime = Date()
 
@@ -70,9 +70,8 @@ final class LearningViewModel: ObservableObject {
     private func loadWordDetails() async {
         await withTaskGroup(of: (String, WordDetail?).self) { group in
             for word in words {
-                group.addTask {
-                    let detail = try? await APIService.wordDetail(id: word.id)
-                    return (word.id, detail)
+                group.addTask { @MainActor in
+                    (word.id, try? LocalAPI.wordDetail(id: word.id))
                 }
             }
             for await (id, detail) in group {
@@ -184,7 +183,7 @@ final class LearningViewModel: ObservableObject {
             selectedAnswer: answer,
             responseTimeMs: nil
         )
-        _ = try? await APIService.submitExercise(sessionId: sessionId, request: req)
+        LocalAPI.submitExercise(sessionId: sessionId, request: req)
     }
 
     // MARK: - Session tamamla
@@ -192,12 +191,7 @@ final class LearningViewModel: ObservableObject {
     private func completeSession() async {
         guard let sessionId else { return }
         let duration = Int(Date().timeIntervalSince(startTime))
-        do {
-            let summary = try await APIService.completeSession(sessionId: sessionId, durationSec: duration)
-            step = .summary(summary)
-        } catch {
-            errorMessage = error.localizedDescription
-        }
+        step = .summary(LocalAPI.completeSession(sessionId: sessionId, durationSec: duration))
     }
 
     func requestReading() {
