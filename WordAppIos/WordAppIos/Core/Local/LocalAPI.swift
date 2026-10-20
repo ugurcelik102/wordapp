@@ -101,17 +101,7 @@ enum LocalAPI {
         guard let w = WordStore.shared.word(id: id) else {
             throw LocalAPIError.wordNotFound
         }
-        // Çeldirici yoksa aynı seviyeden başka tanımlarla tamamla.
-        var options = Array(w.distractors.prefix(3))
-        if options.count < 3 {
-            options += WordStore.shared.words(level: w.levelId)
-                .lazy
-                .filter { $0.id != w.id }
-                .prefix(3 - options.count)
-                .map(\.definition)
-        }
-        options.append(w.definition)
-        options.shuffle()
+        let options = mcqOptions(for: w)
 
         return WordDetail(
             id: w.id, word: w.word, definition: w.definition,
@@ -123,6 +113,28 @@ enum LocalAPI {
             mcqOptions: options,
             wordFamily: []
         )
+    }
+
+    /// Doğru tanım + 3 çeldirici, karıştırılmış. Havuzdaki kelimelerin çoğunda
+    /// hazır çeldirici yok; eksikler aynı seviyedeki başka kelimelerin tanımlarından
+    /// RASTGELE tamamlanır (sabit seçim her soruda aynı yanlış şıkları gösterirdi).
+    /// Aynı türden (isim/fiil/sıfat) tanımlar önceliklidir ki doğru cevap türünden belli olmasın.
+    private static func mcqOptions(for word: LocalWord) -> [String] {
+        var options = Array(word.distractors.prefix(3))
+        if options.count < 3 {
+            let pool = WordStore.shared.words(level: word.levelId)
+                .filter { $0.id != word.id && $0.definition != word.definition }
+                .shuffled()
+            let samePos = pool.filter { $0.partOfSpeech == word.partOfSpeech }
+            let otherPos = pool.filter { $0.partOfSpeech != word.partOfSpeech }
+            for candidate in samePos + otherPos where options.count < 3 {
+                if !options.contains(candidate.definition) {
+                    options.append(candidate.definition)
+                }
+            }
+        }
+        options.append(word.definition)
+        return options.shuffled()
     }
 
     // MARK: - İlerleme
@@ -220,16 +232,7 @@ enum LocalAPI {
                 .prefix(4)
 
             for word in words {
-                var options = Array(word.distractors.prefix(3))
-                if options.count < 3 {
-                    options += WordStore.shared.words(level: level.id)
-                        .lazy
-                        .filter { $0.id != word.id }
-                        .prefix(3 - options.count)
-                        .map(\.definition)
-                }
-                options.append(word.definition)
-                options.shuffle()
+                let options = mcqOptions(for: word)
 
                 questions.append(PlacementQuestion(
                     questionId: qid,
