@@ -4,7 +4,7 @@ Kimliksiz (auth'suz) yapay zekâ uçları için kötüye kullanım koruması.
 Üyelik kaldırıldığı için bu uçlar herkese açıktır ve her istek Claude'a para
 harcatır. İki katmanlı koruma uygulanır:
 
-  1. Cihaz başına günlük kota  — istemcinin gönderdiği X-Device-Id başlığı
+  1. Cihaz başına günlük kota  — istemcinin gönderdiği zorunlu X-Device-Id başlığı
      (iOS identifierForVendor) ile. Normal kullanıcıyı hiç etkilemez.
   2. IP başına pencere limiti  — cihaz kimliğini rastgele üretip kotayı
      aşmaya çalışan istemciler için emniyet ağı.
@@ -13,6 +13,7 @@ Sayaçlar BELLEKTE tutulur: tek instance için yeterlidir, yeniden deploy'da
 sıfırlanır. Birden fazla replica'ya çıkılırsa Redis'e taşınmalıdır.
 """
 import time
+import uuid
 from collections import defaultdict
 
 from fastapi import Header, HTTPException, Request
@@ -57,11 +58,27 @@ def _client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
+def _is_valid_device_id(value: str | None) -> bool:
+    if not value or len(value) != 36:
+        return False
+    try:
+        uuid.UUID(value)
+    except ValueError:
+        return False
+    return True
+
+
 async def ai_quota(
     request: Request,
     x_device_id: str | None = Header(default=None),
 ) -> None:
     """AI uçlarına takılan bağımlılık: kotayı aşan isteği 429 ile reddeder."""
+    # Başlık zorunlu: yoksa cihaz kotası hiç uygulanmaz, yalnızca geniş IP
+    # limiti kalırdı. iOS her istekte bir UUID gönderir; biçimi de doğrulanır
+    # ki keyfi uzun kimliklerle bellekteki sayaç tablosu şişirilemesin.
+    if not _is_valid_device_id(x_device_id):
+        raise HTTPException(status_code=400, detail="Geçersiz istemci.")
+
     now = time.time()
     _prune(now)
 
@@ -75,10 +92,6 @@ async def ai_quota(
         )
     stamps.append(now)
     _ip_hits[ip] = stamps
-
-    # Cihaz kimliği yoksa IP limiti tek koruma olarak kalır.
-    if not x_device_id:
-        return
 
     today = int(now // 86400)
     day, count = _device_hits.get(x_device_id, (today, 0))
