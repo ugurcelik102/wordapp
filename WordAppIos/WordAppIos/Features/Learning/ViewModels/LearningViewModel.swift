@@ -62,6 +62,11 @@ final class LearningViewModel: ObservableObject {
 
             // Overview'e geç
             step = .overview
+
+            // Eksik örnek cümleler arka planda üretilir; "cümle içinde kullanım"
+            // 3. aşamada geldiği için kullanıcı beklemez. İnternet yoksa
+            // ekran "örnek cümle bulunamadı" der, akış bozulmaz.
+            Task { await fillMissingExamples() }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -78,6 +83,12 @@ final class LearningViewModel: ObservableObject {
                 if let detail { wordDetails[id] = detail }
             }
         }
+    }
+
+    private func fillMissingExamples() async {
+        let local = WordStore.shared.words(ids: words.map(\.id))
+        guard (try? await APIService.ensureExamples(for: local)) == true else { return }
+        await loadWordDetails()
     }
 
     // MARK: - Adım geçişleri

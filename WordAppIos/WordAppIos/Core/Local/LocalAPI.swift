@@ -102,12 +102,16 @@ enum LocalAPI {
             throw LocalAPIError.wordNotFound
         }
         let options = mcqOptions(for: w)
+        // Paketteki örnek yoksa yapay zekâyla üretilip saklanmış olanı kullan.
+        let examples = w.examples.isEmpty
+            ? ExampleStore.shared.example(for: w.id).map { [$0] } ?? []
+            : w.examples
 
         return WordDetail(
             id: w.id, word: w.word, definition: w.definition,
             definitionTr: w.definitionTr, ipa: w.ipa, audioUrl: nil,
             partOfSpeech: w.partOfSpeech, register: "neutral",
-            examples: w.examples.map {
+            examples: examples.map {
                 WordExample(sentence: $0.sentence, translation: $0.translation, isPrimary: false)
             },
             mcqOptions: options,

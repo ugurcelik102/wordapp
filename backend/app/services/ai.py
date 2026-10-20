@@ -1,6 +1,6 @@
 """
-Durumsuz (stateless) yapay zekâ üretimi: okuma parçası, deneme sınavı ve
-cümle içinde kullanım alıştırmaları.
+Durumsuz (stateless) yapay zekâ üretimi: okuma parçası, deneme sınavı,
+cümle içinde kullanım alıştırmaları ve kelime örnek cümleleri.
 
 Veritabanı YOKTUR. Üretim için gereken her şeyi (seviye + hedef kelimeler)
 istemci gönderir; sunucu yalnızca Claude'a giden ince bir aracıdır.
@@ -368,3 +368,59 @@ async def generate_sentence_exercises(words: list[AIWord]) -> list[dict]:
 
     random.shuffle(exercises)
     return exercises
+
+
+# ------------------------------------------------------------ Örnek cümleler
+
+
+def _build_examples_prompt(level_code: str, words: list[AIWord]) -> str:
+    listing = "\n".join(
+        f"- {w.word} ({w.part_of_speech or 'word'}): {w.definition}" for w in words
+    )
+    return f"""You write example sentences for a Turkish speaker learning English at {level_code} ({_level_name(level_code)}) level.
+
+For EACH word below, create ONE short, natural English example sentence that uses the word
+in the given meaning, then give its natural Turkish translation.
+
+Words:
+{listing}
+
+Level guidance for {level_code}: {_level_guidance(level_code)}
+
+Respond with ONLY a JSON array (no markdown fences, no extra text). Each item:
+{{"word": "<the exact word as given above>", "sentence": "...", "translation": "..."}}"""
+
+
+def _generate_examples_sync(level_code: str, words: list[AIWord]) -> list[dict]:
+    raw = _ask_claude(_build_examples_prompt(level_code, words), max_tokens=1500)
+    return _extract_json(raw, "[", "]") or []
+
+
+async def generate_examples(level_code: str, words: list[AIWord]) -> list[dict]:
+    """Kelime başına bir örnek cümle + Türkçe çeviri. Kelime havuzundaki çoğu
+    kayıtta örnek olmadığı için istemci bunu bir kez isteyip cihazda saklar."""
+    by_text = {w.word.lower(): w for w in words}
+    try:
+        raw_items = await run_in_threadpool(_generate_examples_sync, level_code, words)
+    except Exception:
+        return []
+
+    examples: list[dict] = []
+    seen: set[str] = set()
+    for item in raw_items:
+        if not isinstance(item, dict):
+            continue
+        word_text = str(item.get("word", "")).strip()
+        sentence = str(item.get("sentence", "")).strip()
+        src = by_text.get(word_text.lower())
+        # Model listede olmayan bir kelime uydurursa ya da tekrar ederse alma.
+        if not src or not sentence or src.word.lower() in seen:
+            continue
+        seen.add(src.word.lower())
+        examples.append({
+            "word_id": src.id,
+            "word": src.word,
+            "sentence": sentence,
+            "translation": str(item.get("translation", "")).strip() or None,
+        })
+    return examples

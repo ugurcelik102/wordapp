@@ -68,6 +68,31 @@ struct SentenceUsageBody: Encodable {
     let words: [AIWordBody]
 }
 
+struct ExamplesBody: Encodable {
+    let levelCode: String
+    let words: [AIWordBody]
+
+    enum CodingKeys: String, CodingKey {
+        case words
+        case levelCode = "level_code"
+    }
+}
+
+struct GeneratedExample: Decodable {
+    let wordId: String?
+    let sentence: String
+    let translation: String?
+
+    enum CodingKeys: String, CodingKey {
+        case sentence, translation
+        case wordId = "word_id"
+    }
+}
+
+struct ExamplesResponse: Decodable {
+    let examples: [GeneratedExample]
+}
+
 // MARK: - Sunucu çağrıları
 
 /// Yalnızca yapay zekâ üretimi sunucuda kalır (Anthropic anahtarı istemciye
@@ -157,5 +182,32 @@ enum APIService {
 
         let body = SentenceUsageBody(words: words.map(AIWordBody.init))
         return try await api.request("/ai/sentence-usage", method: "POST", body: body)
+    }
+
+    // MARK: Örnek cümleler
+
+    /// Örnek cümlesi olmayan kelimeler için yapay zekâdan birer örnek ister ve
+    /// cihazda saklar. Her kelime için bir kez üretilir; sonrası internetsizdir.
+    /// - Returns: Yeni örnek eklendiyse true (ekran detayları yenilemeli).
+    @MainActor
+    @discardableResult
+    static func ensureExamples(for words: [LocalWord]) async throws -> Bool {
+        let missing = Array(ExampleStore.shared.missing(in: words).prefix(12))
+        guard !missing.isEmpty else { return false }
+
+        let body = ExamplesBody(
+            levelCode: ProgressStore.shared.levelCode,
+            words: missing.map(AIWordBody.init)
+        )
+        let response: ExamplesResponse = try await api.request(
+            "/ai/examples", method: "POST", body: body
+        )
+        var new: [String: LocalExample] = [:]
+        for item in response.examples {
+            guard let id = item.wordId else { continue }
+            new[id] = LocalExample(sentence: item.sentence, translation: item.translation)
+        }
+        ExampleStore.shared.store(new)
+        return !new.isEmpty
     }
 }

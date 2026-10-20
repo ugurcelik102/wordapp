@@ -10,8 +10,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.core.config import settings
 from app.core.ratelimit import ai_quota
 from app.schemas.ai import (
-    ExamGenerateResponse, ExamRequest, ReadingRequest, ReadingResponse,
-    SentenceUsageRequest,
+    ExamGenerateResponse, ExamplesRequest, ExamplesResponse, ExamRequest,
+    ReadingRequest, ReadingResponse, SentenceUsageRequest,
 )
 from app.schemas.sentence_usage import SentenceExercisesResponse
 from app.services import ai
@@ -74,3 +74,17 @@ async def sentence_usage(payload: SentenceUsageRequest):
             status_code=502, detail="Alıştırma üretilemedi. Tekrar deneyin."
         )
     return SentenceExercisesResponse(count=len(exercises), exercises=exercises)
+
+
+@router.post("/examples", response_model=ExamplesResponse)
+async def examples(payload: ExamplesRequest):
+    """Gönderilen kelimeler için birer örnek cümle + Türkçe çeviri üretir.
+
+    Kelime havuzundaki çoğu kayıtta örnek yok; istemci öğrenme oturumunda
+    eksikleri bir kez ister ve cihazda saklar.
+    """
+    _require_api_key()
+    items = await ai.generate_examples(payload.level_code, payload.words)
+    if not items:
+        raise HTTPException(status_code=502, detail="Örnek cümle üretilemedi.")
+    return ExamplesResponse(examples=items)

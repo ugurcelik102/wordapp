@@ -58,3 +58,21 @@ class ExamGenerateResponse(BaseModel):
 
 class SentenceUsageRequest(BaseModel):
     words: list[AIWord] = Field(min_length=1, max_length=12)
+
+
+class ExamplesRequest(BaseModel):
+    """Paketteki örnek cümlesi olmayan kelimeler; istemci sonucu cihazda saklar."""
+
+    level_code: str = Field(default="B1", max_length=2)
+    words: list[AIWord] = Field(min_length=1, max_length=12)
+
+
+class WordExampleItem(BaseModel):
+    word_id: str | None = None
+    word: str
+    sentence: str
+    translation: str | None = None
+
+
+class ExamplesResponse(BaseModel):
+    examples: list[WordExampleItem]
