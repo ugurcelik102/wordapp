@@ -4,6 +4,7 @@ enum APIError: LocalizedError {
     case invalidURL
     case unauthorized
     case badRequest(String)          // 4xx: backend'in kullanıcıya yönelik mesajı
+    case unavailable                 // 404: uç sunucuda yok (ör. henüz deploy edilmemiş)
     case serverError(Int, String)
     case decodingError(Error)
     case networkError(Error)
@@ -13,6 +14,7 @@ enum APIError: LocalizedError {
         case .invalidURL:          return "Geçersiz URL"
         case .unauthorized:        return "Oturum süresi doldu. Lütfen tekrar giriş yapın."
         case .badRequest(let msg): return msg
+        case .unavailable:         return "Bu özellik şu an kullanılamıyor. Lütfen daha sonra tekrar dene."
         case .serverError(let code, let msg): return "Sunucu hatası (\(code)): \(msg)"
         case .decodingError(let e):    return "Veri hatası: \(e.localizedDescription)"
         case .networkError(let e):     return e.localizedDescription
@@ -64,6 +66,10 @@ final class APIClient {
         guard (200..<300).contains(http.statusCode) else {
             // Önce {detail: ...} dene; yoksa ham gövdeyi göster (teşhis için).
             let detail = (try? JSONDecoder().decode(APIErrorResponse.self, from: data))?.detail
+
+            // 404: istenen uç sunucuda yok. FastAPI'nin "Not Found" metni
+            // kullanıcıya bir şey anlatmadığı için yerine anlaşılır bir mesaj göster.
+            if http.statusCode == 404 { throw APIError.unavailable }
 
             // 4xx istemci hataları: backend'in kullanıcıya yönelik mesajını olduğu gibi ilet.
             // (Üyelik olmadığı için 401 beklenmez; 429 kota mesajı buradan geçer.)
@@ -121,6 +127,8 @@ final class APIClient {
 
         guard (200..<300).contains(http.statusCode) else {
             let detail = (try? JSONDecoder().decode(APIErrorResponse.self, from: data))?.detail
+
+            if http.statusCode == 404 { throw APIError.unavailable }
 
             if (400..<500).contains(http.statusCode), let detail {
                 throw APIError.badRequest(detail)
